@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>메이플 파티보스 스케줄러</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div class="max-w-6xl mx-auto p-6">
+        
+        <div class="flex justify-between items-center mb-8">
+            <div class="text-2xl font-bold">메이플 파티보스 스케줄러 🍄</div>
+            <button onclick="openModal()" class="bg-blue-500 text-white px-4 py-2 rounded shadow hover:bg-blue-600 transition">+ 새 파티 추가</button>
+        </div>
+
+        <div class="flex border-b mb-6">
+            <button onclick="switchTab('kanban')" id="btn-kanban" class="tab-btn active px-6 py-3 text-slate-500 hover:text-slate-800 focus:outline-none">주간 파티 캘린더 (칸반)</button>
+            <button onclick="switchTab('matrix')" id="btn-matrix" class="tab-btn px-6 py-3 text-slate-500 hover:text-slate-800 focus:outline-none">캐릭터별 현황판 (매트릭스)</button>
+        </div>
+
+        <!-- 뷰 1: 주간 파티 캘린더 -->
+        <div id="tab-kanban" class="tab-content active">
+            <div id="emptyKanbanMsg" class="text-center text-slate-400 mt-20">
+                아직 등록된 파티가 없습니다. 우측 상단의 버튼을 눌러 파티를 추가해보세요
+            </div>
+            <div id="kanbanContainer" class="grid grid-cols-4 gap-4"></div>
+        </div>
+
+        <!-- 뷰 2: 캐릭터별 현황판 -->
+        <div id="tab-matrix" class="tab-content">
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 min-h-[600px]">
+                <div class="flex gap-2 mb-6">
+                    <input type="text" id="searchInput" class="flex-1 border p-3 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="캐릭터 닉네임을 검색해봐 (예: 나로)">
+                    <button onclick="searchCharacter()" class="bg-blue-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600 transition">검색</button>
+                </div>
+                <div id="searchResultArea" class="space-y-3">
+                    <div class="text-center text-slate-400 mt-10">검색창에 닉네임을 입력하면 소속된 파티 목록이 나옵니다.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 파티 추가 및 수정 모달 -->
+    <div id="partyModal" class="modal-overlay hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-[850px]">
+            <h2 id="modalTitle" class="text-xl font-bold mb-4">새 파티 추가</h2>
+            <form id="addPartyForm">
+                <div class="grid grid-cols-12 gap-6 mb-6">
+                    
+                    <div class="col-span-5">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">파티 이름</label>
+                            <input type="text" id="inputTitle" required class="w-full border p-2 rounded" placeholder="예: 하드 루윌팟">
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">참여 캐릭터</label>
+                            <input type="text" id="inputChar" required class="w-full border p-2 rounded" placeholder="닉네임">
+                        </div>
+                        <div class="flex gap-3">
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium mb-1">요일</label>
+                                <select id="inputDay" class="w-full border p-2 rounded">
+                                    <option value="mon">월요일</option>
+                                    <option value="tue">화요일</option>
+                                    <option value="wed">수요일</option>
+                                    <option value="thu">목요일</option>
+                                    <option value="fri">금요일</option>
+                                    <option value="sat">토요일</option>
+                                    <option value="sun">일요일</option>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium mb-1">시간</label>
+                                <input type="text" id="inputTime" required class="w-full border p-2 rounded" placeholder="예: 22:00, 미정">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-span-7 border-l border-slate-200 pl-6">
+                        <label class="block text-sm font-medium mb-1">타겟 보스 (좌클릭: 난이도 변경 / 우클릭: 취소)</label>
+                        <div class="text-xs text-slate-400 mb-3">한 번 더 클릭하면 난이도가 바뀝니다.</div>
+                        <div class="grid grid-cols-3 gap-2" id="bossToggles">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded hover:bg-slate-100">취소</button>
+                    <button type="submit" id="submitBtn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">추가하기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 파티 상세 정보 모달 -->
+    <div id="detailModal" class="modal-overlay hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-80 relative">
+            <div class="absolute top-4 right-4 flex gap-2">
+                <button onclick="editParty()" class="text-xs font-bold text-blue-400 hover:text-blue-600 px-2 py-1 bg-blue-50 rounded">수정</button>
+                <button onclick="deleteParty()" class="text-xs font-bold text-red-400 hover:text-red-600 px-2 py-1 bg-red-50 rounded">삭제</button>
+            </div>
+            
+            <h2 id="detailTitle" class="text-xl font-bold mb-1 text-slate-800 pr-24"></h2>
+            <div id="detailTime" class="text-sm text-slate-500 mb-5 font-mono"></div>
+            
+            <div class="mb-4">
+                <h3 class="text-sm font-bold text-slate-700 border-b pb-1 mb-2">가야 할 보스</h3>
+                <div id="detailBosses" class="flex flex-wrap gap-2"></div>
+            </div>
+
+            <div class="mb-6">
+                <h3 class="text-sm font-bold text-slate-700 border-b pb-1 mb-2">참여 캐릭터</h3>
+                <div id="detailChars" class="space-y-1 text-sm text-slate-600"></div>
+            </div>
+            <button onclick="closeDetailModal()" class="w-full py-2 bg-slate-100 text-slate-700 font-bold rounded hover:bg-slate-200 transition">닫기</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
