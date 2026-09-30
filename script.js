@@ -147,34 +147,38 @@ function renderKanban() {
         if (dayParties.length > 0) {
             const cardsHtml = dayParties.map(p => {
                 const charListHtml = p.chars.split(',').map(char => `
-                    <div class="text-sm text-slate-600">${char.trim()}</div>
+                    <div class="text-sm text-slate-600 truncate">${char.trim()}</div>
                 `).join('');
 
                 const bossTagsHtml = p.bosses ? p.bosses.split(',').map(b => 
                     `<span class="text-[10px] px-1.5 py-0.5 rounded mr-1 ${getBadgeColor(b)} font-bold inline-block mt-1">${b}</span>`
                 ).join('') : '';
 
+                // w-fit과 max-w-full을 추가해서 글자 길이에 맞춰 가로가 늘어나되, 칸을 뚫고 나가지는 않게 설정
+                // 기존 aspect-square 대신 min-h-[160px] min-w-[160px]로 짧은 이름일 때만 정사각형 유지
                 return `
                     <div id="${p.id}" onclick="showDetailModal('${p.title}', '${p.time}', '${p.bosses}', '${p.chars}', '${p.id}')" 
-                         class="bg-slate-50 border border-slate-200 p-3 rounded cursor-pointer hover:border-blue-400 hover:shadow-md transition">
-                        <div class="flex justify-between items-start mb-1">
-                            <span class="font-bold text-slate-800">${p.title}</span>
-                            <span class="text-xs bg-slate-200 px-2 py-1 rounded font-mono">${p.time}</span>
+                         class="bg-slate-50 border border-slate-200 p-3 rounded cursor-pointer hover:border-blue-400 hover:shadow-md transition flex flex-col w-fit min-w-[160px] max-w-full min-h-[160px]">
+                        <div class="flex justify-between items-start mb-1 shrink-0 gap-3">
+                            <!-- truncate 삭제하고 break-words 적용 -->
+                            <span class="font-bold text-slate-800 break-words" title="${p.title}">${p.title}</span>
+                            <span class="text-xs bg-slate-200 px-2 py-1 rounded font-mono shrink-0">${p.time}</span>
                         </div>
-                        <div class="mb-2">${bossTagsHtml}</div>
-                        <div class="space-y-1 mt-2 border-t pt-2 border-slate-200">
-                            ${charListHtml}
+                        <div class="mb-2 shrink-0">${bossTagsHtml}</div>
+                        <div class="mt-auto border-t pt-2 border-slate-200 flex-1 overflow-y-auto custom-scrollbar">
+                            <div class="space-y-1">${charListHtml}</div>
                         </div>
                     </div>
                 `;
             }).join('');
 
             const colHtml = `
-                <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-[600px] flex flex-col">
+                <div class="flex-1 min-w-[300px] bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-[600px] flex flex-col">
                     <div class="font-bold text-lg mb-4 border-b pb-2 text-center shrink-0 ${dayInfo[dayKey].color}">
                         ${dayInfo[dayKey].name}
                     </div>
-                    <div class="space-y-3 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                    <!-- grid 대신 flex flex-wrap으로 변경하여 카드들이 자연스럽게 흘러가며 배치되도록 수정 -->
+                    <div class="flex flex-wrap gap-3 overflow-y-auto flex-1 pr-1 custom-scrollbar content-start">
                         ${cardsHtml}
                     </div>
                 </div>
