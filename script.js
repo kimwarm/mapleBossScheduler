@@ -2,7 +2,8 @@
 const supabaseUrl = 'https://wwtlccjhiearimyuquwh.supabase.co';
 // 주의: 따옴표 안에 아까 복사한 sb_publishable_... 키를 전부 붙여넣어!
 const supabaseKey = 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD'; 
-const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+// 변수 이름을 supabase에서 db로 변경
+const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ===========================
 
 function switchTab(tabId) {
@@ -183,9 +184,9 @@ function renderKanban() {
     });
 }
 
-// DB에서 데이터 불러오기
+// DB에서 데이터 불러오기 (db 객체 사용)
 async function loadParties() {
-    const { data, error } = await supabase.from('parties').select('*');
+    const { data, error } = await db.from('parties').select('*');
     if (error) {
         console.error('DB 불러오기 에러:', error);
         return;
@@ -194,11 +195,10 @@ async function loadParties() {
     renderKanban();
 }
 
-// 파티 추가 및 수정 (DB 반영)
+// 파티 추가 및 수정 (db 객체 사용)
 document.getElementById('addPartyForm').addEventListener('submit', async function(e) {
     e.preventDefault(); 
     
-    // 버튼 비활성화 (연타 방지)
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.innerText = '저장 중...';
@@ -210,8 +210,7 @@ document.getElementById('addPartyForm').addEventListener('submit', async functio
     const bossesString = getSelectedBossesString(); 
 
     if (editingCardId) {
-        // 수정 모드: DB 업데이트
-        const { error } = await supabase
+        const { error } = await db
             .from('parties')
             .update({ title, chars, day, time, bosses: bossesString })
             .eq('id', editingCardId);
@@ -225,11 +224,10 @@ document.getElementById('addPartyForm').addEventListener('submit', async functio
             console.error('수정 에러:', error);
         }
     } else {
-        // 새 파티 추가 모드: DB 삽입
         const uniqueCardId = 'party-' + Date.now();
         const newParty = { id: uniqueCardId, title, chars, day, time, bosses: bossesString };
         
-        const { error } = await supabase
+        const { error } = await db
             .from('parties')
             .insert([newParty]);
 
@@ -301,12 +299,12 @@ function editParty() {
     document.getElementById('partyModal').classList.remove('hidden');
 }
 
-// DB에서 파티 삭제
+// DB에서 파티 삭제 (db 객체 사용)
 async function deleteParty() {
     if (confirm("이 파티 일정을 삭제할까?")) {
         const idToDelete = currentSelectedCardId;
         
-        const { error } = await supabase
+        const { error } = await db
             .from('parties')
             .delete()
             .eq('id', idToDelete);
@@ -373,5 +371,5 @@ document.getElementById('searchInput').addEventListener('keypress', function(e) 
 
 window.onload = function() {
     initBosses();
-    loadParties(); // 페이지 켜질 때 DB에서 데이터 불러오기
+    loadParties(); 
 };
