@@ -1,3 +1,10 @@
+// ====== Supabase 설정 ======
+const supabaseUrl = 'https://wwtlccjhiearimyuquwh.supabase.co';
+// 주의: 따옴표 안에 아까 복사한 sb_publishable_... 키를 전부 붙여넣어!
+const supabaseKey = 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD'; 
+const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+// ===========================
+
 function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -21,6 +28,8 @@ const bossConfig = [
 
 let currentBossState = {}; 
 let editingCardId = null; 
+let currentSelectedCardId = null; 
+let partiesData = []; 
 
 function initBosses() {
     bossConfig.forEach(b => currentBossState[b.key] = -1);
@@ -107,9 +116,6 @@ function closeModal() {
     initBosses(); 
 }
 
-let currentSelectedCardId = null; 
-let partiesData = []; 
-
 function renderKanban() {
     const container = document.getElementById('kanbanContainer');
     const emptyMsg = document.getElementById('emptyKanbanMsg');
@@ -177,8 +183,25 @@ function renderKanban() {
     });
 }
 
-document.getElementById('addPartyForm').addEventListener('submit', function(e) {
+// DB에서 데이터 불러오기
+async function loadParties() {
+    const { data, error } = await supabase.from('parties').select('*');
+    if (error) {
+        console.error('DB 불러오기 에러:', error);
+        return;
+    }
+    partiesData = data || [];
+    renderKanban();
+}
+
+// 파티 추가 및 수정 (DB 반영)
+document.getElementById('addPartyForm').addEventListener('submit', async function(e) {
     e.preventDefault(); 
+    
+    // 버튼 비활성화 (연타 방지)
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerText = '저장 중...';
 
     const title = document.getElementById('inputTitle').value;
     const chars = document.getElementById('inputChar').value;
@@ -187,28 +210,40 @@ document.getElementById('addPartyForm').addEventListener('submit', function(e) {
     const bossesString = getSelectedBossesString(); 
 
     if (editingCardId) {
-        const partyIndex = partiesData.findIndex(p => p.id === editingCardId);
-        if (partyIndex > -1) {
-            partiesData[partyIndex].title = title;
-            partiesData[partyIndex].chars = chars;
-            partiesData[partyIndex].day = day;
-            partiesData[partyIndex].time = time;
-            partiesData[partyIndex].bosses = bossesString;
+        // 수정 모드: DB 업데이트
+        const { error } = await supabase
+            .from('parties')
+            .update({ title, chars, day, time, bosses: bossesString })
+            .eq('id', editingCardId);
+
+        if (!error) {
+            const partyIndex = partiesData.findIndex(p => p.id === editingCardId);
+            if (partyIndex > -1) {
+                partiesData[partyIndex] = { id: editingCardId, title, chars, day, time, bosses: bossesString };
+            }
+        } else {
+            console.error('수정 에러:', error);
         }
     } else {
+        // 새 파티 추가 모드: DB 삽입
         const uniqueCardId = 'party-' + Date.now();
-        partiesData.push({
-            id: uniqueCardId,
-            title: title,
-            chars: chars,
-            day: day,
-            time: time,
-            bosses: bossesString
-        });
+        const newParty = { id: uniqueCardId, title, chars, day, time, bosses: bossesString };
+        
+        const { error } = await supabase
+            .from('parties')
+            .insert([newParty]);
+
+        if (!error) {
+            partiesData.push(newParty);
+        } else {
+            console.error('추가 에러:', error);
+        }
     }
 
     renderKanban(); 
     closeModal();
+    
+    submitBtn.disabled = false;
 });
 
 function showDetailModal(title, time, bossesStr, charsStr, cardId) {
@@ -266,13 +301,24 @@ function editParty() {
     document.getElementById('partyModal').classList.remove('hidden');
 }
 
-function deleteParty() {
-    if (confirm("이 파티 일정을 삭제할까요?")) {
-        partiesData = partiesData.filter(p => p.id !== currentSelectedCardId);
+// DB에서 파티 삭제
+async function deleteParty() {
+    if (confirm("이 파티 일정을 삭제할까?")) {
+        const idToDelete = currentSelectedCardId;
         
-        renderKanban(); 
-        closeDetailModal();
-        searchCharacter(); 
+        const { error } = await supabase
+            .from('parties')
+            .delete()
+            .eq('id', idToDelete);
+
+        if (!error) {
+            partiesData = partiesData.filter(p => p.id !== idToDelete);
+            renderKanban(); 
+            closeDetailModal();
+            searchCharacter(); 
+        } else {
+            console.error('삭제 에러:', error);
+        }
     }
 }
 
@@ -327,5 +373,5 @@ document.getElementById('searchInput').addEventListener('keypress', function(e) 
 
 window.onload = function() {
     initBosses();
-    renderKanban(); 
+    loadParties(); // 페이지 켜질 때 DB에서 데이터 불러오기
 };
