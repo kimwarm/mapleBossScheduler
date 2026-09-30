@@ -329,36 +329,37 @@ function searchCharacter() {
     const resultArea = document.getElementById('searchResultArea');
     
     if (!keyword) {
-        resultArea.innerHTML = '<div class="text-center text-slate-400 mt-10">검색할 닉네임을 입력해주세요.</div>';
+        resultArea.innerHTML = '<div class="w-full text-center text-slate-400 mt-4">검색할 닉네임을 입력해주세요.</div>';
         return;
     }
 
     const filtered = partiesData.filter(p => p.chars.includes(keyword));
 
     if (filtered.length === 0) {
-        resultArea.innerHTML = '<div class="text-center text-slate-400 mt-10">해당 캐릭터가 소속된 파티가 없습니다.</div>';
+        resultArea.innerHTML = '<div class="w-full text-center text-slate-400 mt-4">해당 캐릭터가 소속된 파티가 없습니다.</div>';
         return;
     }
 
     const dayMap = { mon: '월요일', tue: '화요일', wed: '수요일', thu: '목요일', fri: '금요일', sat: '토요일', sun: '일요일' };
 
-    const resultHtml = filtered.map(p => {
+   const resultHtml = filtered.map(p => {
         const bosses = p.bosses ? p.bosses.split(',') : [];
         const bossBadges = bosses.length > 0 
             ? bosses.map(b => `<span class="px-2 py-1 text-xs font-bold rounded mr-1 ${getBadgeColor(b)} inline-block mb-1">${b}</span>`).join('')
             : `<span class="text-sm text-slate-400">선택된 보스 없음</span>`;
 
         return `
-            <div onclick="switchTab('kanban')" class="bg-white border border-slate-200 p-4 rounded-lg shadow-sm hover:border-blue-400 transition cursor-pointer">
-                <div class="flex justify-between items-center mb-3">
-                    <span class="font-bold text-lg text-slate-800">${p.title}</span>
-                    <span class="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-bold">${dayMap[p.day]} ${p.time}</span>
+            <div onclick="switchTab('kanban')" class="bg-white border border-slate-200 p-4 rounded-lg shadow-sm hover:border-blue-400 transition cursor-pointer flex flex-col w-fit min-w-[240px] max-w-full">
+                <div class="flex justify-between items-start mb-3 gap-3 shrink-0">
+                    <span class="font-bold text-lg text-slate-800 break-words">${p.title}</span>
+                    <span class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold shrink-0 mt-0.5">${dayMap[p.day]} ${p.time}</span>
                 </div>
-                <div class="mb-3">
+                <div class="mb-3 shrink-0">
                     ${bossBadges}
                 </div>
-                <div class="text-sm text-slate-600 border-t pt-3 border-slate-100">
-                    <span class="font-bold text-slate-700">참여 명단:</span> ${p.chars}
+                <div class="text-sm text-slate-600 border-t pt-3 border-slate-100 mt-auto">
+                    <span class="font-bold text-slate-700">참여 명단:</span> 
+                    <div class="mt-1 leading-relaxed break-words">${p.chars}</div>
                 </div>
             </div>
         `;
