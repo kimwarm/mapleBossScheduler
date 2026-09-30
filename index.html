@@ -16,8 +16,8 @@
         </div>
 
         <div class="flex border-b mb-6">
-            <button onclick="switchTab('kanban')" id="btn-kanban" class="tab-btn active px-6 py-3 text-slate-500 hover:text-slate-800 focus:outline-none">주간 파티 캘린더 (칸반)</button>
-            <button onclick="switchTab('matrix')" id="btn-matrix" class="tab-btn px-6 py-3 text-slate-500 hover:text-slate-800 focus:outline-none">캐릭터별 현황판 (매트릭스)</button>
+            <button onclick="switchTab('kanban')" id="btn-kanban" class="tab-btn active px-6 py-3 text-slate-500 hover:text-slate-800 focus:outline-none">주간 파티 캘린더</button>
+            <button onclick="switchTab('matrix')" id="btn-matrix" class="tab-btn px-6 py-3 text-slate-500 hover:text-slate-800 focus:outline-none">캐릭터별 현황판</button>
         </div>
 
         <!-- 뷰 1: 주간 파티 캘린더 -->
@@ -32,7 +32,7 @@
         <div id="tab-matrix" class="tab-content">
             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 min-h-[600px]">
                 <div class="flex gap-2 mb-6">
-                    <input type="text" id="searchInput" class="flex-1 border p-3 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="캐릭터 닉네임을 검색해봐 (예: 나로)">
+                    <input type="text" id="searchInput" class="flex-1 border p-3 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="캐릭터 닉네임을 검색하세요">
                     <button onclick="searchCharacter()" class="bg-blue-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600 transition">검색</button>
                 </div>
                 <div id="searchResultArea" class="space-y-3">
