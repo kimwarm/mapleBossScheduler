@@ -151,7 +151,7 @@ function renderKanban() {
                 `).join('');
 
                 const bossTagsHtml = p.bosses ? p.bosses.split(',').map(b => 
-                    `<span class="text-[10px] px-1.5 py-0.5 rounded mr-1 ${getBadgeColor(b)} font-bold inline-block mt-1">${b}</span>`
+                    `<span class="text-xs px-2 py-1 rounded mr-1 ${getBadgeColor(b)} font-bold inline-block mt-1">${b}</span>`
                 ).join('') : '';
 
                 // w-fit과 max-w-full을 추가해서 글자 길이에 맞춰 가로가 늘어나되, 칸을 뚫고 나가지는 않게 설정
@@ -305,7 +305,7 @@ function editParty() {
 
 // DB에서 파티 삭제 (db 객체 사용)
 async function deleteParty() {
-    if (confirm("이 파티 일정을 삭제할까?")) {
+    if (confirm("이 파티 일정을 삭제할까요?")) {
         const idToDelete = currentSelectedCardId;
         
         const { error } = await db
