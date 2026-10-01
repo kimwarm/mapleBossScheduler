@@ -34,9 +34,12 @@
         <!-- 뷰 2: 캐릭터별 현황판 -->
         <div id="tab-matrix" class="tab-content">
             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 min-h-[600px]">
-                <div class="flex gap-2 mb-6">
-                    <input type="text" id="searchInput" class="flex-1 border p-3 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="캐릭터 닉네임을 검색하세요">
-                    <button onclick="searchCharacter()" class="bg-blue-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600 transition">검색</button>
+                <!-- flex-col과 sm:flex-row를 넣어서 폰에서는 세로, PC에서는 가로로 배치 -->
+                <div class="flex flex-col sm:flex-row gap-2 mb-6">
+                    <!-- min-w-0을 넣어서 글자가 길어도 박스를 밀어내지 않게 고정 -->
+                    <input type="text" id="searchInput" class="flex-1 min-w-0 border p-3 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="캐릭터 닉네임을 검색해봐 (예: 나로)">
+                    <!-- w-full sm:w-auto shrink-0을 넣어서 폰에서는 꽉 차게, PC에서는 버튼 크기 유지 -->
+                    <button onclick="searchCharacter()" class="w-full sm:w-auto shrink-0 bg-blue-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600 transition">검색</button>
                 </div>
                 <div id="searchResultArea" class="flex flex-wrap gap-4 content-start">
                     <div class="w-full text-center text-slate-400 mt-4">검색창에 닉네임을 입력하면 소속된 파티 목록이 나옵니다.</div>
