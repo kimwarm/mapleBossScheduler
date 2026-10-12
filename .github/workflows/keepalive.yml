@@ -1,0 +1,18 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # 3일에 한 번씩 알아서 실행되도록 타이머 설정 (UTC 기준 자정)
+    - cron: '0 0 */3 * *'
+  # 깃허브 웹사이트에서 수동으로도 실행할 수 있게 해주는 옵션
+  workflow_dispatch: 
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          curl -X GET "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?select=id&limit=1" \
+          -H "apikey: sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
+          -H "Authorization: Bearer sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD"
