@@ -151,32 +151,32 @@ function renderKanban() {
                 `).join('');
 
                 const bossTagsHtml = p.bosses ? p.bosses.split(',').map(b => 
-                `<span class="text-[10px] px-1.5 py-0.5 rounded mr-1 ${getBadgeColor(b)} font-bold inline-block mt-1">${b}</span>`
+                `<span class="text-xs px-2 py-0.5 rounded ${getBadgeColor(b)} font-bold shrink-0">${b}</span>`
             ).join('') : '';
 
-            // DB에 저장된 상태에 따라 클래스 결정
             const isCleared = p.is_cleared === true;
             const borderClass = isCleared ? 'border-green-500 bg-green-50' : 'border-red-400 bg-slate-50';
 
-            // oncontextmenu에 파티 ID(p.id)를 넘겨주도록 수정, class에 borderClass 적용
             return `
                 <div id="${p.id}" onclick="showDetailModal('${p.title}', '${p.time}', '${p.bosses}', '${p.chars}', '${p.id}')" 
                      oncontextmenu="toggleCardColor(event, this, '${p.id}')"
-                     class="${borderClass} border-2 p-3 rounded cursor-pointer hover:shadow-md transition flex flex-col w-fit min-w-[160px] max-w-full min-h-[160px]">
-                    <div class="flex justify-between items-start mb-1 shrink-0 gap-3">
-                        <span class="font-bold text-slate-800 break-words" title="${p.title}">${p.title}</span>
-                        <span class="text-xs bg-slate-200 px-2 py-1 rounded font-mono shrink-0">${p.time}</span>
+                     class="${borderClass} border-2 p-2.5 rounded cursor-pointer hover:shadow-md transition flex flex-col w-full mb-2">
+                    <div class="flex justify-between items-start mb-2 shrink-0 gap-2">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="font-bold text-sm text-slate-800 break-words leading-tight" title="${p.title}">${p.title}</span>
+                            ${bossTagsHtml}
+                        </div>
+                        <span class="text-[11px] bg-slate-200 px-1.5 py-0.5 rounded font-mono shrink-0 mt-0.5">${p.time}</span>
                     </div>
-                    <div class="mb-2 shrink-0">${bossTagsHtml}</div>
-                    <div class="mt-auto border-t pt-2 border-slate-200 flex-1 overflow-y-auto custom-scrollbar">
-                        <div class="space-y-1">${charListHtml}</div>
+                    <div class="border-t pt-1.5 border-slate-200">
+                        <div class="space-y-0.5 text-xs text-slate-700">${charListHtml}</div>
                     </div>
                 </div>
             `;
         }).join('');
 
             const colHtml = `
-                <div class="flex-1 min-w-[300px] bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-[600px] flex flex-col">
+                <div class="flex-1 min-w-[300px] bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-[800px] flex flex-col">
                     <div class="font-bold text-lg mb-4 border-b pb-2 text-center shrink-0 ${dayInfo[dayKey].color}">
                         ${dayInfo[dayKey].name}
                     </div>
