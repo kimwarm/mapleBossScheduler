@@ -353,8 +353,15 @@ function searchCharacter() {
             ? bosses.map(b => `<span class="px-2 py-1 text-xs font-bold rounded mr-1 ${getBadgeColor(b)} inline-block mb-1">${b}</span>`).join('')
             : `<span class="text-sm text-slate-400">선택된 보스 없음</span>`;
 
+        // 주간 현황판과 동일하게 DB 상태 확인 및 테두리 색상 결정
+        const isCleared = p.is_cleared === true;
+        const borderClass = isCleared ? 'border-green-500 bg-green-50' : 'border-red-400 bg-slate-50';
+
+        // class에 borderClass와 border-2 적용, oncontextmenu 추가
         return `
-            <div onclick="switchTab('kanban')" class="bg-white border border-slate-200 p-4 rounded-lg shadow-sm hover:border-blue-400 transition cursor-pointer flex flex-col w-fit min-w-[240px] max-w-full">
+            <div id="search-${p.id}" onclick="switchTab('kanban')" 
+                 oncontextmenu="toggleCardColor(event, this, '${p.id}')" 
+                 class="${borderClass} border-2 p-4 rounded-lg shadow-sm hover:shadow-md transition cursor-pointer flex flex-col w-fit min-w-[240px] max-w-full">
                 <div class="flex justify-between items-start mb-3 gap-3 shrink-0">
                     <span class="font-bold text-lg text-slate-800 break-words">${p.title}</span>
                     <span class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold shrink-0 mt-0.5">${dayMap[p.day]} ${p.time}</span>
@@ -362,7 +369,7 @@ function searchCharacter() {
                 <div class="mb-3 shrink-0">
                     ${bossBadges}
                 </div>
-                <div class="text-sm text-slate-600 border-t pt-3 border-slate-100 mt-auto">
+                <div class="text-sm text-slate-600 border-t pt-3 border-slate-200 mt-auto">
                     <span class="font-bold text-slate-700">참여 명단:</span> 
                     <div class="mt-1 leading-relaxed break-words">${p.chars}</div>
                 </div>
