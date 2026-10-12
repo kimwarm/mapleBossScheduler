@@ -151,26 +151,29 @@ function renderKanban() {
                 `).join('');
 
                 const bossTagsHtml = p.bosses ? p.bosses.split(',').map(b => 
-                    `<span class="text-xs px-2 py-1 rounded mr-1 ${getBadgeColor(b)} font-bold inline-block mt-1">${b}</span>`
-                ).join('') : '';
+                `<span class="text-[10px] px-1.5 py-0.5 rounded mr-1 ${getBadgeColor(b)} font-bold inline-block mt-1">${b}</span>`
+            ).join('') : '';
 
-                // w-fit과 max-w-full을 추가해서 글자 길이에 맞춰 가로가 늘어나되, 칸을 뚫고 나가지는 않게 설정
-                // 기존 aspect-square 대신 min-h-[160px] min-w-[160px]로 짧은 이름일 때만 정사각형 유지
-                return `
-                    <div id="${p.id}" onclick="showDetailModal('${p.title}', '${p.time}', '${p.bosses}', '${p.chars}', '${p.id}')" 
-                         class="bg-slate-50 border border-slate-200 p-3 rounded cursor-pointer hover:border-blue-400 hover:shadow-md transition flex flex-col w-fit min-w-[160px] max-w-full min-h-[160px]">
-                        <div class="flex justify-between items-start mb-1 shrink-0 gap-3">
-                            <!-- truncate 삭제하고 break-words 적용 -->
-                            <span class="font-bold text-slate-800 break-words" title="${p.title}">${p.title}</span>
-                            <span class="text-xs bg-slate-200 px-2 py-1 rounded font-mono shrink-0">${p.time}</span>
-                        </div>
-                        <div class="mb-2 shrink-0">${bossTagsHtml}</div>
-                        <div class="mt-auto border-t pt-2 border-slate-200 flex-1 overflow-y-auto custom-scrollbar">
-                            <div class="space-y-1">${charListHtml}</div>
-                        </div>
+            // DB에 저장된 상태에 따라 클래스 결정
+            const isCleared = p.is_cleared === true;
+            const borderClass = isCleared ? 'border-green-500 bg-green-50' : 'border-red-400 bg-slate-50';
+
+            // oncontextmenu에 파티 ID(p.id)를 넘겨주도록 수정, class에 borderClass 적용
+            return `
+                <div id="${p.id}" onclick="showDetailModal('${p.title}', '${p.time}', '${p.bosses}', '${p.chars}', '${p.id}')" 
+                     oncontextmenu="toggleCardColor(event, this, '${p.id}')"
+                     class="${borderClass} border-2 p-3 rounded cursor-pointer hover:shadow-md transition flex flex-col w-fit min-w-[160px] max-w-full min-h-[160px]">
+                    <div class="flex justify-between items-start mb-1 shrink-0 gap-3">
+                        <span class="font-bold text-slate-800 break-words" title="${p.title}">${p.title}</span>
+                        <span class="text-xs bg-slate-200 px-2 py-1 rounded font-mono shrink-0">${p.time}</span>
                     </div>
-                `;
-            }).join('');
+                    <div class="mb-2 shrink-0">${bossTagsHtml}</div>
+                    <div class="mt-auto border-t pt-2 border-slate-200 flex-1 overflow-y-auto custom-scrollbar">
+                        <div class="space-y-1">${charListHtml}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
 
             const colHtml = `
                 <div class="flex-1 min-w-[300px] bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-[600px] flex flex-col">
@@ -228,8 +231,10 @@ document.getElementById('addPartyForm').addEventListener('submit', async functio
             console.error('수정 에러:', error);
         }
     } else {
+        // 새 파티 추가 모드: DB 삽입
         const uniqueCardId = 'party-' + Date.now();
-        const newParty = { id: uniqueCardId, title, chars, day, time, bosses: bossesString };
+        // is_cleared: false 추가
+        const newParty = { id: uniqueCardId, title, chars, day, time, bosses: bossesString, is_cleared: false };
         
         const { error } = await db
             .from('parties')
@@ -366,6 +371,39 @@ function searchCharacter() {
     }).join('');
 
     resultArea.innerHTML = resultHtml;
+}
+
+async function toggleCardColor(event, element, partyId) {
+    event.preventDefault(); 
+    event.stopPropagation(); 
+
+    // 현재 파티 데이터 찾기
+    const party = partiesData.find(p => p.id === partyId);
+    if (!party) return;
+
+    // 상태 반전 (true <-> false)
+    const newClearedState = !party.is_cleared;
+    party.is_cleared = newClearedState;
+
+    // 시각적 즉시 변경 (대기 시간 없이 바로 색상 전환)
+    if (newClearedState) {
+        element.classList.remove('border-red-400', 'bg-slate-50');
+        element.classList.add('border-green-500', 'bg-green-50');
+    } else {
+        element.classList.remove('border-green-500', 'bg-green-50');
+        element.classList.add('border-red-400', 'bg-slate-50');
+    }
+
+    // Supabase DB 업데이트
+    const { error } = await db
+        .from('parties')
+        .update({ is_cleared: newClearedState })
+        .eq('id', partyId);
+
+    if (error) {
+        console.error('상태 업데이트 에러:', error);
+        alert('상태 저장에 실패했습니다.');
+    }
 }
 
 document.getElementById('searchInput').addEventListener('keypress', function(e) {
