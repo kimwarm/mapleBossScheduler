@@ -330,15 +330,22 @@ async function deleteParty() {
 }
 
 function searchCharacter() {
-    const keyword = document.getElementById('searchInput').value.trim();
+    const rawInput = document.getElementById('searchInput').value;
     const resultArea = document.getElementById('searchResultArea');
     
-    if (!keyword) {
+    const keywords = rawInput
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+
+    if (keywords.length === 0) {
         resultArea.innerHTML = '<div class="w-full text-center text-slate-400 mt-4">검색할 닉네임을 입력해주세요.</div>';
         return;
     }
 
-    const filtered = partiesData.filter(p => p.chars.includes(keyword));
+    const filtered = partiesData.filter(p => 
+        keywords.some(keyword => p.chars.includes(keyword))
+    );
 
     if (filtered.length === 0) {
         resultArea.innerHTML = '<div class="w-full text-center text-slate-400 mt-4">해당 캐릭터가 소속된 파티가 없습니다.</div>';
