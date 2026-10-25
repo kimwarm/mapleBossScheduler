@@ -8,6 +8,8 @@
     <meta http-equiv="Expires" content="0">
     <title>메이플 파티보스 스케줄러</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 드래그 앤 드롭 정렬을 위한 SortableJS 추가 -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -25,10 +27,24 @@
 
         <!-- 뷰 1: 주간 파티 캘린더 -->
         <div id="tab-kanban" class="tab-content active">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 mb-3 px-1">
+                <span>💡 카드를 꾹 눌러 위아래(또는 다른 요일)로 순서를 바꿀 수 있습니다.</span>
+                <span>카드 좌클릭: 전체 완료 / 보스 뱃지 클릭: 개별 완료 / 카드 우클릭: 상세·수정</span>
+            </div>
             <div id="emptyKanbanMsg" class="text-center text-slate-400 mt-20">
                 아직 등록된 파티가 없습니다. 우측 상단의 버튼을 눌러 파티를 추가해보세요
             </div>
             <div id="kanbanContainer" class="flex gap-4 overflow-x-auto pb-4 custom-scrollbar"></div>
+
+            <!-- 하단 월간 보스(검은마법사) 전용 구역 -->
+            <div id="monthlyBossSection" class="mt-6 w-full bg-white p-5 rounded-lg shadow-sm border border-slate-200 hidden">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+                    <div class="font-bold text-lg text-slate-800 flex items-center gap-2">
+                        <span>월간 보스 (검은마법사)</span>
+                    </div>
+                </div>
+                <div id="monthlyBossContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+            </div>
         </div>
 
         <!-- 뷰 2: 캐릭터별 현황판 -->
@@ -49,22 +65,24 @@
     </div>
 
     <!-- 파티 추가 및 수정 모달 -->
-    <div id="partyModal" class="modal-overlay hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-        <div class="bg-white p-6 rounded-lg shadow-lg w-[850px]">
+    <div id="partyModal" class="modal-overlay hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-[850px] max-h-[90vh] overflow-y-auto">
             <h2 id="modalTitle" class="text-xl font-bold mb-4">새 파티 추가</h2>
-            <form id="addPartyForm">
-                <div class="grid grid-cols-12 gap-6 mb-6">
+            <form id="addPartyForm" novalidate>
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-6">
                     
-                    <div class="col-span-5">
+                    <div class="md:col-span-5">
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-1">파티 이름</label>
-                            <input type="text" id="inputTitle" required class="w-full border p-2 rounded" placeholder="예: 하드 루윌팟">
+                            <input type="text" id="inputTitle" class="w-full border p-2 rounded" placeholder="예: 하드 루윌팟">
                         </div>
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-1">참여 캐릭터</label>
-                            <input type="text" id="inputChar" required class="w-full border p-2 rounded" placeholder="닉네임">
+                            <input type="text" id="inputChar" class="w-full border p-2 rounded" placeholder="닉네임 (쉼표로 구분)">
                         </div>
-                        <div class="flex gap-3">
+
+                        <!-- 주간 보스용: 요일 + 시간 입력 -->
+                        <div id="weeklyScheduleInputs" class="flex gap-3">
                             <div class="flex-1">
                                 <label class="block text-sm font-medium mb-1">요일</label>
                                 <select id="inputDay" class="w-full border p-2 rounded">
@@ -79,15 +97,22 @@
                             </div>
                             <div class="flex-1">
                                 <label class="block text-sm font-medium mb-1">시간</label>
-                                <input type="text" id="inputTime" required class="w-full border p-2 rounded" placeholder="예: 22:00, 미정">
+                                <input type="text" id="inputTime" class="w-full border p-2 rounded" placeholder="예: 22:00, 미정">
                             </div>
+                        </div>
+
+                        <!-- 월간 보스(검은마법사)용: 날짜/메모 자유 입력 -->
+                        <div id="monthlyScheduleInputs" class="hidden">
+                            <label class="block text-sm font-medium mb-1 text-slate-700">월간 보스 일정 (날짜 / 메모)</label>
+                            <input type="text" id="inputMonthlyMemo" class="w-full border border-slate-300 bg-slate-50 p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="예: 매월 15일 21:00, 첫째주 일요일 밤 등">
+                            <p class="text-[11px] text-slate-400 mt-1">검은마법사는 요일 기둥 대신 하단 전용 구역에 표시됩니다.</p>
                         </div>
                     </div>
 
-                    <div class="col-span-7 border-l border-slate-200 pl-6">
+                    <div class="md:col-span-7 md:border-l border-slate-200 md:pl-6">
                         <label class="block text-sm font-medium mb-1">타겟 보스 (좌클릭: 난이도 변경 / 우클릭: 취소)</label>
-                        <div class="text-xs text-slate-400 mb-3">한 번 더 클릭하면 난이도가 바뀝니다.</div>
-                        <div class="grid grid-cols-3 gap-2" id="bossToggles">
+                        <div class="text-xs text-slate-400 mb-3">한 번 더 클릭하면 난이도가 바뀝니다. (주간 보스와 월간 보스는 동시 선택 불가)</div>
+                        <div id="bossToggles">
                         </div>
                     </div>
                 </div>
@@ -101,23 +126,26 @@
     </div>
 
     <!-- 파티 상세 정보 모달 -->
-    <div id="detailModal" class="modal-overlay hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-        <div class="bg-white p-6 rounded-lg shadow-lg w-80 relative">
+    <div id="detailModal" class="modal-overlay hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-[360px] relative">
             <div class="absolute top-4 right-4 flex gap-2">
-                <button onclick="editParty()" class="text-xs font-bold text-blue-400 hover:text-blue-600 px-2 py-1 bg-blue-50 rounded">수정</button>
-                <button onclick="deleteParty()" class="text-xs font-bold text-red-400 hover:text-red-600 px-2 py-1 bg-red-50 rounded">삭제</button>
+                <button onclick="editParty()" class="text-xs font-bold text-blue-500 hover:text-blue-700 px-2.5 py-1 bg-blue-50 rounded">수정</button>
+                <button onclick="deleteParty()" class="text-xs font-bold text-red-500 hover:text-red-700 px-2.5 py-1 bg-red-50 rounded">삭제</button>
             </div>
             
-            <h2 id="detailTitle" class="text-xl font-bold mb-1 text-slate-800 pr-24"></h2>
-            <div id="detailTime" class="text-sm text-slate-500 mb-5 font-mono"></div>
+            <h2 id="detailTitle" class="text-xl font-bold mb-1 text-slate-800 pr-24 break-words"></h2>
+            <div id="detailTime" class="text-sm text-slate-500 mb-4 font-mono"></div>
             
             <div class="mb-4">
-                <h3 class="text-sm font-bold text-slate-700 border-b pb-1 mb-2">가야 할 보스</h3>
-                <div id="detailBosses" class="flex flex-wrap gap-2"></div>
+                <div class="flex justify-between items-center border-b pb-1.5 mb-2.5 gap-2">
+                    <h3 class="text-sm font-bold text-slate-700 whitespace-nowrap">가야 할 보스</h3>
+                    <button id="detailToggleAllBtn" onclick="toggleCardColor(event, currentSelectedCardId)" class="text-xs font-medium px-2.5 py-1 rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition whitespace-nowrap shrink-0">전체 완료</button>
+                </div>
+                <div id="detailBosses" class="flex flex-wrap gap-1.5"></div>
             </div>
 
             <div class="mb-6">
-                <h3 class="text-sm font-bold text-slate-700 border-b pb-1 mb-2">참여 캐릭터</h3>
+                <h3 class="text-sm font-bold text-slate-700 border-b pb-1.5 mb-2">참여 캐릭터</h3>
                 <div id="detailChars" class="space-y-1 text-sm text-slate-600"></div>
             </div>
             <button onclick="closeDetailModal()" class="w-full py-2 bg-slate-100 text-slate-700 font-bold rounded hover:bg-slate-200 transition">닫기</button>

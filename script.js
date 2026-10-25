@@ -6,6 +6,9 @@ const supabaseKey = 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD';
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ===========================
 
+const ORDER_STORAGE_KEY = 'mapleBossPartyOrder_v1';
+const CLEARED_BOSSES_FALLBACK_KEY = 'mapleBossClearedBosses_v1';
+
 function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -15,57 +18,118 @@ function switchTab(tabId) {
 }
 
 const bossConfig = [
-    { key: '익스우', name: '익스우', diffs: ['선택'] },
-    { key: '세렌', name: '세렌', diffs: ['노말', '하드', '익스'] },
-    { key: '칼로스', name: '칼로스', diffs: ['노말', '카오스', '익스'] },
-    { key: '대적자', name: '대적자', diffs: ['이지', '노말', '하드', '익스'] },
-    { key: '카링', name: '카링', diffs: ['이지', '노말', '하드', '익스'] },
-    { key: '흉성', name: '흉성', diffs: ['노말', '하드'] },
-    { key: '벨로나', name: '벨로나', diffs: ['이지', '노말', '하드'] },
-    { key: '림보', name: '림보', diffs: ['노말', '하드'] },
-    { key: '발드릭스', name: '발드릭스', diffs: ['노말', '하드'] },
-    { key: '검은마법사', name: '검은마법사', diffs: ['하드', '익스'] }
+    { key: '익스우', name: '익스우', diffs: ['선택'], isMonthly: false },
+    { key: '세렌', name: '세렌', diffs: ['노말', '하드', '익스'], isMonthly: false },
+    { key: '칼로스', name: '칼로스', diffs: ['노말', '카오스', '익스'], isMonthly: false },
+    { key: '대적자', name: '대적자', diffs: ['이지', '노말', '하드', '익스'], isMonthly: false },
+    { key: '카링', name: '카링', diffs: ['이지', '노말', '하드', '익스'], isMonthly: false },
+    { key: '흉성', name: '흉성', diffs: ['노말', '하드'], isMonthly: false },
+    { key: '벨로나', name: '벨로나', diffs: ['이지', '노말', '하드'], isMonthly: false },
+    { key: '림보', name: '림보', diffs: ['노말', '하드'], isMonthly: false },
+    { key: '발드릭스', name: '발드릭스', diffs: ['노말', '하드'], isMonthly: false },
+    { key: '검은마법사', name: '검은마법사', diffs: ['하드', '익스'], isMonthly: true }
 ];
 
 let currentBossState = {}; 
 let editingCardId = null; 
 let currentSelectedCardId = null; 
 let partiesData = []; 
+let sortableInstances = [];
+let isDraggingCard = false;
 
 function initBosses() {
     bossConfig.forEach(b => currentBossState[b.key] = -1);
     renderBossToggles();
 }
 
+// 현재 모달에서 월간 보스(검은마법사)가 선택되어 있는지 확인
+function isMonthlyBossSelectedInModal() {
+    return bossConfig.some(b => b.isMonthly && currentBossState[b.key] > -1);
+}
+
+// 주간 보스 vs 월간 보스 선택 상태에 따라 좌측 일정 입력창(요일+시간 vs 날짜/메모) 전환
+function syncScheduleInputMode() {
+    const isMonthly = isMonthlyBossSelectedInModal();
+    const weeklyInputs = document.getElementById('weeklyScheduleInputs');
+    const monthlyInputs = document.getElementById('monthlyScheduleInputs');
+
+    if (!weeklyInputs || !monthlyInputs) return;
+
+    if (isMonthly) {
+        weeklyInputs.classList.add('hidden');
+        monthlyInputs.classList.remove('hidden');
+    } else {
+        weeklyInputs.classList.remove('hidden');
+        monthlyInputs.classList.add('hidden');
+    }
+}
+
+function getBossToggleButtonHtml(b) {
+    const stateIdx = currentBossState[b.key];
+    const isSelected = stateIdx > -1;
+    const currentDiff = isSelected ? b.diffs[stateIdx] : null;
+    
+    const diffText = isSelected && currentDiff !== '선택' ? `(${currentDiff})` : '';
+    
+    let bgClass = 'bg-slate-100 text-slate-500 hover:bg-slate-200';
+    if (isSelected) {
+        if (currentDiff === '이지') bgClass = 'bg-[#98a3ab] text-white shadow-sm';
+        else if (currentDiff === '노말') bgClass = 'bg-[#47a8c9] text-white shadow-sm';
+        else if (currentDiff === '하드') bgClass = 'bg-[#d65e86] text-white shadow-sm';
+        else if (currentDiff === '카오스') bgClass = 'bg-[#474546] text-[#e0c39a] ring-1 ring-[#e0c39a] shadow-sm';
+        else if (currentDiff === '익스' || currentDiff === '선택') bgClass = 'bg-[#3b3b3b] text-[#e56041] ring-1 ring-[#e14251] shadow-sm';
+    }
+    
+    return `
+        <button type="button" onclick="toggleBoss('${b.key}')" oncontextmenu="cancelBoss(event, '${b.key}')"
+                class="w-full px-1 py-2 rounded-md text-[13px] font-medium transition-all whitespace-nowrap ${bgClass}">
+            ${b.name}${diffText}
+        </button>
+    `;
+}
+
 function renderBossToggles() {
     const container = document.getElementById('bossToggles');
-    container.innerHTML = bossConfig.map(b => {
-        const stateIdx = currentBossState[b.key];
-        const isSelected = stateIdx > -1;
-        const currentDiff = isSelected ? b.diffs[stateIdx] : null;
-        
-        const diffText = isSelected && currentDiff !== '선택' ? `(${currentDiff})` : '';
-        
-        let bgClass = 'bg-slate-100 text-slate-500';
-        if (isSelected) {
-            if (currentDiff === '이지') bgClass = 'bg-[#98a3ab] text-white shadow-sm';
-            else if (currentDiff === '노말') bgClass = 'bg-[#47a8c9] text-white shadow-sm';
-            else if (currentDiff === '하드') bgClass = 'bg-[#d65e86] text-white shadow-sm';
-            else if (currentDiff === '카오스') bgClass = 'bg-[#474546] text-[#e0c39a] ring-1 ring-[#e0c39a] shadow-sm';
-            else if (currentDiff === '익스' || currentDiff === '선택') bgClass = 'bg-[#3b3b3b] text-[#e56041] ring-1 ring-[#e14251] shadow-sm';
-        }
-        
-        return `
-            <button type="button" onclick="toggleBoss('${b.key}')" oncontextmenu="cancelBoss(event, '${b.key}')"
-                    class="w-full px-1 py-2 rounded-md text-[13px] font-medium transition-all whitespace-nowrap ${bgClass}">
-                ${b.name}${diffText}
-            </button>
-        `;
-    }).join('');
+    const weeklyBosses = bossConfig.filter(b => !b.isMonthly);
+    const monthlyBosses = bossConfig.filter(b => b.isMonthly);
+
+    const weeklyHtml = weeklyBosses.map(b => getBossToggleButtonHtml(b)).join('');
+    const monthlyHtml = monthlyBosses.map(b => getBossToggleButtonHtml(b)).join('');
+
+    container.innerHTML = `
+        <div class="text-xs font-bold text-slate-500 mb-1.5">[ 주간 보스 ]</div>
+        <div class="grid grid-cols-3 gap-2 mb-3">
+            ${weeklyHtml}
+        </div>
+        <div class="border-t border-dashed border-slate-300 pt-3 mt-2">
+            <div class="text-xs font-bold text-slate-600 mb-1.5 flex items-center gap-1">
+                <span>[ 👑 월간 보스 ]</span>
+                <span class="text-[11px] font-normal text-slate-400">(선택 시 일정 입력창이 날짜/메모로 전환됨)</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+                ${monthlyHtml}
+            </div>
+        </div>
+    `;
+
+    syncScheduleInputMode();
 }
 
 function toggleBoss(key) {
     const config = bossConfig.find(b => b.key === key);
+    if (!config) return;
+
+    // 주간 보스와 월간 보스('검은마법사') 상호 배타적 선택 제어
+    if (config.isMonthly) {
+        bossConfig.filter(b => !b.isMonthly).forEach(b => {
+            currentBossState[b.key] = -1;
+        });
+    } else {
+        bossConfig.filter(b => b.isMonthly).forEach(b => {
+            currentBossState[b.key] = -1;
+        });
+    }
+
     currentBossState[key]++;
     
     if (currentBossState[key] >= config.diffs.length) {
@@ -104,11 +168,179 @@ function getBadgeColor(bossName) {
     return 'bg-slate-200 text-slate-700';
 }
 
+// DB에 cleared_bosses 컬럼이 없거나 반영 전일 때를 대비한 로컬 보조 저장소
+function getLocalClearedFallbackMap() {
+    try {
+        const raw = localStorage.getItem(CLEARED_BOSSES_FALLBACK_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveLocalClearedFallback(partyId, clearedStr) {
+    try {
+        const map = getLocalClearedFallbackMap();
+        map[partyId] = clearedStr;
+        localStorage.setItem(CLEARED_BOSSES_FALLBACK_KEY, JSON.stringify(map));
+    } catch (e) {}
+}
+
+// Supabase 업데이트 시 cleared_bosses 컬럼 에러가 나면 자동으로 기본 컬럼만으로 재시도하는 안전 래퍼
+async function safeInsertParty(newParty) {
+    let { error } = await db.from('parties').insert([newParty]);
+    if (error && error.message && error.message.includes('cleared_bosses')) {
+        const { cleared_bosses, ...fallbackParty } = newParty;
+        const retry = await db.from('parties').insert([fallbackParty]);
+        error = retry.error;
+    }
+    return { error };
+}
+
+async function safeUpdateParty(partyId, payload) {
+    if ('cleared_bosses' in payload) {
+        saveLocalClearedFallback(partyId, payload.cleared_bosses);
+    }
+    let { error } = await db.from('parties').update(payload).eq('id', partyId);
+    if (error && error.message && error.message.includes('cleared_bosses')) {
+        const { cleared_bosses, ...fallbackPayload } = payload;
+        if (Object.keys(fallbackPayload).length > 0) {
+            const retry = await db.from('parties').update(fallbackPayload).eq('id', partyId);
+            error = retry.error;
+        } else {
+            error = null;
+        }
+    }
+    return { error };
+}
+
+// 파티의 보스 목록과 클리어한 보스 목록을 배열로 파싱하는 헬퍼 함수
+function getBossList(bossesStr) {
+    if (!bossesStr) return [];
+    return bossesStr.split(',').map(b => b.trim()).filter(b => b.length > 0);
+}
+
+function getClearedBossList(party) {
+    const allBosses = getBossList(party.bosses);
+    let sourceStr = party.cleared_bosses;
+
+    if (sourceStr === undefined || sourceStr === null) {
+        const fallbackMap = getLocalClearedFallbackMap();
+        if (party.id in fallbackMap) {
+            sourceStr = fallbackMap[party.id];
+        } else if (party.is_cleared === true) {
+            return [...allBosses];
+        }
+    }
+
+    if (!sourceStr) return [];
+    const rawCleared = sourceStr.split(',').map(b => b.trim()).filter(b => b.length > 0);
+    return rawCleared.filter(b => allBosses.includes(b));
+}
+
+function isPartyAllCleared(party) {
+    const allBosses = getBossList(party.bosses);
+    const clearedBosses = getClearedBossList(party);
+    return allBosses.length > 0 ? clearedBosses.length === allBosses.length : party.is_cleared === true;
+}
+
+// 카드 테두리 및 배경 색상 결정 (미진행 / 진행 중 / 완료)
+function getCardStatusClasses(party) {
+    const allBosses = getBossList(party.bosses);
+    const clearedBosses = getClearedBossList(party);
+
+    if (allBosses.length === 0) {
+        return party.is_cleared ? 'border-green-500 bg-green-50' : 'border-red-400 bg-slate-50';
+    }
+
+    if (clearedBosses.length === 0) {
+        return 'border-red-400 bg-slate-50'; // 0개 클리어 (미진행)
+    } else if (clearedBosses.length < allBosses.length) {
+        return 'border-amber-400 bg-amber-50/30'; // 일부 클리어 (진행 중)
+    } else {
+        return 'border-green-500 bg-green-50'; // 전부 클리어 (완료)
+    }
+}
+
+// 개별 보스 뱃지 HTML 생성 (클리어 시 무난하고 깔끔한 슬레이트 회색 + 취소선 스타일)
+function renderBossBadgesHtml(party, sizeClass = 'text-xs px-2 py-0.5') {
+    const allBosses = getBossList(party.bosses);
+    if (allBosses.length === 0) {
+        return `<span class="text-xs text-slate-400">선택된 보스 없음</span>`;
+    }
+    const clearedBosses = getClearedBossList(party);
+
+    return allBosses.map(b => {
+        const isBossCleared = clearedBosses.includes(b);
+        const safeBossName = b.replace(/'/g, "\\'");
+        
+        // 안 깬 보스는 원래의 선명한 색상, 깬 보스는 깔끔한 회색 톤 + 취소선으로 차분하게 표현
+        const badgeStyle = isBossCleared 
+            ? 'bg-slate-200 text-slate-400 line-through font-medium' 
+            : `${getBadgeColor(b)} font-bold hover:brightness-110`;
+
+        return `<span onclick="toggleBossClear(event, '${party.id}', '${safeBossName}')" 
+                      oncontextmenu="toggleBossClear(event, '${party.id}', '${safeBossName}')"
+                      title="클릭하여 '${b}' 클리어 상태 변경"
+                      class="${sizeClass} rounded ${badgeStyle} shrink-0 cursor-pointer select-none transition inline-flex items-center">${b}</span>`;
+    }).join('');
+}
+
+// 참여자 명단 컴팩트 가로 나열 HTML 생성 (검색 키워드 하이라이트 지원)
+function renderCompactCharsHtml(charsStr, highlightKeywords = []) {
+    if (!charsStr) return '';
+    const chars = charsStr.split(',').map(c => c.trim()).filter(c => c.length > 0);
+    return chars.map(c => {
+        const isMatched = highlightKeywords.length > 0 && highlightKeywords.some(kw => c.includes(kw));
+        if (isMatched) {
+            return `<span class="inline-block font-bold text-blue-600 bg-blue-50 px-1.5 rounded ring-1 ring-blue-200">${c}</span>`;
+        }
+        return `<span class="inline-block">${c}</span>`;
+    }).join('<span class="text-slate-300 mx-1">·</span>');
+}
+
+// ====== 카드 순서 저장 및 불러오기 (드래그 앤 드롭 정렬 유지) ======
+function getSavedOrderMap() {
+    try {
+        const raw = localStorage.getItem(ORDER_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveContainerOrder(groupKey, orderedIds) {
+    try {
+        const map = getSavedOrderMap();
+        map[groupKey] = orderedIds;
+        localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(map));
+    } catch (e) {
+        console.error('순서 저장 실패:', e);
+    }
+}
+
+function sortPartiesBySavedOrder(parties, groupKey) {
+    const map = getSavedOrderMap();
+    const savedIds = map[groupKey] || [];
+    if (savedIds.length === 0) return parties;
+
+    return [...parties].sort((a, b) => {
+        const idxA = savedIds.indexOf(a.id);
+        const idxB = savedIds.indexOf(b.id);
+        if (idxA === -1 && idxB === -1) return 0;
+        if (idxA === -1) return 1;
+        if (idxB === -1) return -1;
+        return idxA - idxB;
+    });
+}
+// ==============================================================
+
 function openModal() {
     editingCardId = null; 
     document.getElementById('modalTitle').innerText = '새 파티 추가';
     document.getElementById('submitBtn').innerText = '추가하기';
     document.getElementById('partyModal').classList.remove('hidden');
+    syncScheduleInputMode();
 }
 
 function closeModal() {
@@ -117,18 +349,139 @@ function closeModal() {
     initBosses(); 
 }
 
+function renderPartyCardHtml(p) {
+    const charListHtml = renderCompactCharsHtml(p.chars);
+    const bossTagsHtml = renderBossBadgesHtml(p, 'text-xs px-2 py-0.5');
+    const borderClass = getCardStatusClasses(p);
+    const timeLabel = p.time || '일정 미정';
+
+    return `
+        <div id="${p.id}" data-party-id="${p.id}" onclick="handleCardClick(event, '${p.id}')" 
+             oncontextmenu="handleCardRightClick(event, '${p.id}')"
+             class="party-card ${borderClass} border-2 p-2.5 rounded cursor-pointer hover:shadow-md transition flex flex-col w-full select-none">
+            <div class="flex justify-between items-start mb-2 shrink-0 gap-2">
+                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                    <span class="font-bold text-sm text-slate-800 break-words leading-tight" title="${p.title}">${p.title}</span>
+                    ${bossTagsHtml}
+                </div>
+                <span class="text-[11px] bg-slate-200/90 text-slate-700 px-1.5 py-0.5 rounded font-mono shrink-0 mt-0.5">${timeLabel}</span>
+            </div>
+            <div class="border-t pt-1.5 border-slate-200/80 mt-auto">
+                <div class="flex flex-wrap items-center gap-y-0.5 text-xs text-slate-700 leading-snug">${charListHtml}</div>
+            </div>
+        </div>
+    `;
+}
+
+// 좌클릭: 전체 완료/미완료 토글 (드래그 직후 클릭은 무시)
+function handleCardClick(event, partyId) {
+    if (isDraggingCard) return;
+    toggleCardColor(event, partyId);
+}
+
+// 우클릭: 파티 상세/수정 모달 열기
+function handleCardRightClick(event, partyId) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isDraggingCard) return;
+    showDetailModal(partyId);
+}
+
+// SortableJS를 이용해 카드를 꾹 눌러 위아래(또는 다른 요일 기둥)로 순서 이동
+function initSortableLists() {
+    sortableInstances.forEach(inst => inst.destroy());
+    sortableInstances = [];
+
+    if (typeof Sortable === 'undefined') return;
+
+    // 1. 주간 요일별 기둥 드래그 앤 드롭
+    document.querySelectorAll('.kanban-day-list').forEach(listEl => {
+        const instance = new Sortable(listEl, {
+            group: 'weekly-parties',
+            animation: 180,
+            delay: 140,
+            delayOnTouchOnly: false,
+            touchStartThreshold: 5,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            dragClass: 'sortable-drag',
+            filter: 'button, span[onclick]',
+            preventOnFilter: false,
+            onStart: function () {
+                isDraggingCard = true;
+            },
+            onEnd: async function (evt) {
+                setTimeout(() => { isDraggingCard = false; }, 50);
+
+                const fromDay = evt.from.dataset.day;
+                const toDay = evt.to.dataset.day;
+                const movedPartyId = evt.item.dataset.partyId;
+
+                const toIds = Array.from(evt.to.querySelectorAll('.party-card')).map(el => el.dataset.partyId);
+                saveContainerOrder(toDay, toIds);
+
+                if (fromDay && toDay && fromDay !== toDay) {
+                    const fromIds = Array.from(evt.from.querySelectorAll('.party-card')).map(el => el.dataset.partyId);
+                    saveContainerOrder(fromDay, fromIds);
+
+                    const party = partiesData.find(p => p.id === movedPartyId);
+                    if (party) {
+                        party.day = toDay;
+                        await safeUpdateParty(movedPartyId, { day: toDay });
+                    }
+                }
+            }
+        });
+        sortableInstances.push(instance);
+    });
+
+    // 2. 월간 보스(검은마법사) 구역 드래그 앤 드롭 순서 변경
+    const monthlyContainer = document.getElementById('monthlyBossContainer');
+    if (monthlyContainer && monthlyContainer.querySelectorAll('.party-card').length > 0) {
+        const monthlySortable = new Sortable(monthlyContainer, {
+            group: 'monthly-parties',
+            animation: 180,
+            delay: 140,
+            delayOnTouchOnly: false,
+            touchStartThreshold: 5,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            dragClass: 'sortable-drag',
+            filter: 'button, span[onclick]',
+            preventOnFilter: false,
+            onStart: function () {
+                isDraggingCard = true;
+            },
+            onEnd: function () {
+                setTimeout(() => { isDraggingCard = false; }, 50);
+                const orderedIds = Array.from(monthlyContainer.querySelectorAll('.party-card')).map(el => el.dataset.partyId);
+                saveContainerOrder('monthly', orderedIds);
+            }
+        });
+        sortableInstances.push(monthlySortable);
+    }
+}
+
 function renderKanban() {
     const container = document.getElementById('kanbanContainer');
     const emptyMsg = document.getElementById('emptyKanbanMsg');
+    const monthlySection = document.getElementById('monthlyBossSection');
+    const monthlyContainer = document.getElementById('monthlyBossContainer');
     
     container.innerHTML = '';
+    if (monthlyContainer) monthlyContainer.innerHTML = '';
     
     if (partiesData.length === 0) {
         emptyMsg.style.display = 'block';
+        if (monthlySection) monthlySection.classList.add('hidden');
         return;
     } else {
         emptyMsg.style.display = 'none';
     }
+
+    // 주간 보스 파티와 월간 보스('검은마법사' 포함) 파티 분리
+    const weeklyParties = partiesData.filter(p => !(p.bosses && p.bosses.includes('검은마법사')));
+    const monthlyParties = partiesData.filter(p => p.bosses && p.bosses.includes('검은마법사'));
 
     const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
     const dayInfo = {
@@ -142,46 +495,18 @@ function renderKanban() {
     };
 
     dayOrder.forEach(dayKey => {
-        const dayParties = partiesData.filter(p => p.day === dayKey);
+        const rawDayParties = weeklyParties.filter(p => p.day === dayKey);
         
-        if (dayParties.length > 0) {
-            const cardsHtml = dayParties.map(p => {
-                const charListHtml = p.chars.split(',').map(char => `
-                    <div class="text-sm text-slate-600 truncate">${char.trim()}</div>
-                `).join('');
-
-                const bossTagsHtml = p.bosses ? p.bosses.split(',').map(b => 
-                `<span class="text-xs px-2 py-0.5 rounded ${getBadgeColor(b)} font-bold shrink-0">${b}</span>`
-            ).join('') : '';
-
-            const isCleared = p.is_cleared === true;
-            const borderClass = isCleared ? 'border-green-500 bg-green-50' : 'border-red-400 bg-slate-50';
-
-            return `
-                <div id="${p.id}" onclick="showDetailModal('${p.title}', '${p.time}', '${p.bosses}', '${p.chars}', '${p.id}')" 
-                     oncontextmenu="toggleCardColor(event, this, '${p.id}')"
-                     class="${borderClass} border-2 p-2.5 rounded cursor-pointer hover:shadow-md transition flex flex-col w-full mb-2">
-                    <div class="flex justify-between items-start mb-2 shrink-0 gap-2">
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <span class="font-bold text-sm text-slate-800 break-words leading-tight" title="${p.title}">${p.title}</span>
-                            ${bossTagsHtml}
-                        </div>
-                        <span class="text-[11px] bg-slate-200 px-1.5 py-0.5 rounded font-mono shrink-0 mt-0.5">${p.time}</span>
-                    </div>
-                    <div class="border-t pt-1.5 border-slate-200">
-                        <div class="space-y-0.5 text-xs text-slate-700">${charListHtml}</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        if (rawDayParties.length > 0) {
+            const sortedDayParties = sortPartiesBySavedOrder(rawDayParties, dayKey);
+            const cardsHtml = sortedDayParties.map(p => renderPartyCardHtml(p)).join('');
 
             const colHtml = `
-                <div class="flex-1 min-w-[300px] bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-[800px] flex flex-col">
+                <div class="flex-1 min-w-[300px] bg-white p-4 rounded-lg shadow-sm border border-slate-200 h-[720px] flex flex-col">
                     <div class="font-bold text-lg mb-4 border-b pb-2 text-center shrink-0 ${dayInfo[dayKey].color}">
                         ${dayInfo[dayKey].name}
                     </div>
-                    <!-- grid 대신 flex flex-wrap으로 변경하여 카드들이 자연스럽게 흘러가며 배치되도록 수정 -->
-                    <div class="flex flex-wrap gap-3 overflow-y-auto flex-1 pr-1 custom-scrollbar content-start">
+                    <div data-day="${dayKey}" class="kanban-day-list flex flex-col gap-2.5 overflow-y-auto flex-1 pr-1 custom-scrollbar content-start">
                         ${cardsHtml}
                     </div>
                 </div>
@@ -189,6 +514,23 @@ function renderKanban() {
             container.insertAdjacentHTML('beforeend', colHtml);
         }
     });
+
+    // 하단 월간 보스(검은마법사) 구역 렌더링
+    if (monthlySection && monthlyContainer) {
+        monthlySection.classList.remove('hidden');
+        if (monthlyParties.length > 0) {
+            const sortedMonthly = sortPartiesBySavedOrder(monthlyParties, 'monthly');
+            monthlyContainer.innerHTML = sortedMonthly.map(p => renderPartyCardHtml(p)).join('');
+        } else {
+            monthlyContainer.innerHTML = `
+                <div class="col-span-full text-center text-sm text-slate-400 py-6">
+                    아직 등록된 월간 보스(검은마법사) 파티가 없습니다.
+                </div>
+            `;
+        }
+    }
+
+    initSortableLists();
 }
 
 // DB에서 데이터 불러오기 (db 객체 사용)
@@ -206,67 +548,135 @@ async function loadParties() {
 document.getElementById('addPartyForm').addEventListener('submit', async function(e) {
     e.preventDefault(); 
     
+    const title = document.getElementById('inputTitle').value.trim();
+    const chars = document.getElementById('inputChar').value.trim();
+    const bossesString = getSelectedBossesString(); 
+    const isMonthly = bossesString.includes('검은마법사');
+
+    const day = isMonthly ? 'monthly' : document.getElementById('inputDay').value;
+    const time = isMonthly 
+        ? document.getElementById('inputMonthlyMemo').value.trim() 
+        : document.getElementById('inputTime').value.trim();
+
+    if (!title) {
+        alert('파티 이름을 입력해주세요.');
+        document.getElementById('inputTitle').focus();
+        return;
+    }
+    if (!chars) {
+        alert('참여 캐릭터를 입력해주세요.');
+        document.getElementById('inputChar').focus();
+        return;
+    }
+    if (!time) {
+        alert(isMonthly ? '월간 보스 일정(날짜/메모)을 입력해주세요.' : '출발 시간을 입력해주세요.');
+        document.getElementById(isMonthly ? 'inputMonthlyMemo' : 'inputTime').focus();
+        return;
+    }
+
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.innerText = '저장 중...';
 
-    const title = document.getElementById('inputTitle').value;
-    const chars = document.getElementById('inputChar').value;
-    const day = document.getElementById('inputDay').value;
-    const time = document.getElementById('inputTime').value;
-    const bossesString = getSelectedBossesString(); 
-
     if (editingCardId) {
-        const { error } = await db
-            .from('parties')
-            .update({ title, chars, day, time, bosses: bossesString })
-            .eq('id', editingCardId);
+        const existingParty = partiesData.find(p => p.id === editingCardId);
+        const newBossList = getBossList(bossesString);
+        const prevCleared = existingParty ? getClearedBossList(existingParty) : [];
+        const validCleared = prevCleared.filter(b => newBossList.includes(b));
+        const newClearedBossesStr = validCleared.join(',');
+        const newIsCleared = newBossList.length > 0 && validCleared.length === newBossList.length;
+
+        const updatePayload = { 
+            title, 
+            chars, 
+            day, 
+            time, 
+            bosses: bossesString,
+            cleared_bosses: newClearedBossesStr,
+            is_cleared: newIsCleared
+        };
+
+        const { error } = await safeUpdateParty(editingCardId, updatePayload);
 
         if (!error) {
             const partyIndex = partiesData.findIndex(p => p.id === editingCardId);
             if (partyIndex > -1) {
-                partiesData[partyIndex] = { id: editingCardId, title, chars, day, time, bosses: bossesString };
+                partiesData[partyIndex] = { 
+                    ...partiesData[partyIndex],
+                    id: editingCardId, 
+                    ...updatePayload
+                };
             }
         } else {
             console.error('수정 에러:', error);
+            alert('파티 수정 중 오류가 발생했습니다: ' + error.message);
         }
     } else {
-        // 새 파티 추가 모드: DB 삽입
         const uniqueCardId = 'party-' + Date.now();
-        // is_cleared: false 추가
-        const newParty = { id: uniqueCardId, title, chars, day, time, bosses: bossesString, is_cleared: false };
+        const newParty = { 
+            id: uniqueCardId, 
+            title, 
+            chars, 
+            day, 
+            time, 
+            bosses: bossesString, 
+            cleared_bosses: '',
+            is_cleared: false 
+        };
         
-        const { error } = await db
-            .from('parties')
-            .insert([newParty]);
+        const { error } = await safeInsertParty(newParty);
 
         if (!error) {
+            saveLocalClearedFallback(uniqueCardId, '');
             partiesData.push(newParty);
         } else {
             console.error('추가 에러:', error);
+            alert('파티 추가 중 오류가 발생했습니다: ' + error.message);
         }
     }
 
     renderKanban(); 
+    if (document.getElementById('searchInput').value.trim()) {
+        searchCharacter();
+    }
     closeModal();
     
     submitBtn.disabled = false;
 });
 
-function showDetailModal(title, time, bossesStr, charsStr, cardId) {
+function updateDetailModalView(party) {
+    const dayMap = { mon: '월요일', tue: '화요일', wed: '수요일', thu: '목요일', fri: '금요일', sat: '토요일', sun: '일요일', monthly: '월간 일정' };
+    const isMonthly = party.bosses && party.bosses.includes('검은마법사');
+
+    document.getElementById('detailTitle').innerText = party.title;
+    if (isMonthly) {
+        document.getElementById('detailTime').innerText = `일정/메모: ${party.time}`;
+    } else {
+        document.getElementById('detailTime').innerText = `출발 시간: ${dayMap[party.day] || ''} ${party.time}`;
+    }
+
+    document.getElementById('detailBosses').innerHTML = renderBossBadgesHtml(party, 'px-2.5 py-1 text-xs');
+
+    // 상세 모달 내 '전체 완료 / 완료 해제' 버튼 (무난하고 깔끔한 슬레이트 스타일)
+    const toggleAllBtn = document.getElementById('detailToggleAllBtn');
+    if (toggleAllBtn) {
+        const allCleared = isPartyAllCleared(party);
+        toggleAllBtn.innerText = allCleared ? '완료 해제' : '전체 완료';
+        toggleAllBtn.className = allCleared
+            ? 'text-xs font-medium px-2.5 py-1 rounded border border-slate-300 bg-slate-200 hover:bg-slate-300 text-slate-700 transition whitespace-nowrap shrink-0'
+            : 'text-xs font-medium px-2.5 py-1 rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition whitespace-nowrap shrink-0';
+    }
+
+    const chars = party.chars ? party.chars.split(',') : [];
+    document.getElementById('detailChars').innerHTML = chars.map(c => `<div>· ${c.trim()}</div>`).join('');
+}
+
+function showDetailModal(cardId) {
+    const party = partiesData.find(p => p.id === cardId);
+    if (!party) return;
+
     currentSelectedCardId = cardId; 
-    document.getElementById('detailTitle').innerText = title;
-    document.getElementById('detailTime').innerText = `출발 시간: ${time}`;
-
-    const bosses = bossesStr ? bossesStr.split(',') : [];
-    const bossHtml = bosses.length > 0 
-        ? bosses.map(b => `<span class="px-2 py-1 text-xs font-bold rounded ${getBadgeColor(b)} mr-1 inline-block mb-1">${b}</span>`).join('')
-        : `<span class="text-sm text-slate-400">선택된 보스 없음</span>`;
-    document.getElementById('detailBosses').innerHTML = bossHtml;
-
-    const chars = charsStr ? charsStr.split(',') : [];
-    document.getElementById('detailChars').innerHTML = chars.map(c => `<div>- ${c.trim()}</div>`).join('');
-
+    updateDetailModalView(party);
     document.getElementById('detailModal').classList.remove('hidden');
 }
 
@@ -287,15 +697,13 @@ function editParty() {
 
     document.getElementById('inputTitle').value = partyToEdit.title;
     document.getElementById('inputChar').value = partyToEdit.chars;
-    document.getElementById('inputDay').value = partyToEdit.day;
-    document.getElementById('inputTime').value = partyToEdit.time;
 
     initBosses(); 
     if (partyToEdit.bosses) {
         const bossList = partyToEdit.bosses.split(',');
         bossList.forEach(b => {
-            const bName = b.split('(')[0];
-            const bDiff = b.includes('(') ? b.split('(')[1].replace(')', '') : '선택';
+            const bName = b.split('(')[0].trim();
+            const bDiff = b.includes('(') ? b.split('(')[1].replace(')', '').trim() : '선택';
             
             const config = bossConfig.find(c => c.name === bName);
             if (config) {
@@ -304,6 +712,16 @@ function editParty() {
         });
     }
     renderBossToggles();
+
+    if (isMonthlyBossSelectedInModal()) {
+        document.getElementById('inputMonthlyMemo').value = partyToEdit.time || '';
+        document.getElementById('inputDay').value = 'mon';
+        document.getElementById('inputTime').value = '';
+    } else {
+        document.getElementById('inputDay').value = partyToEdit.day && partyToEdit.day !== 'monthly' ? partyToEdit.day : 'mon';
+        document.getElementById('inputTime').value = partyToEdit.time || '';
+        document.getElementById('inputMonthlyMemo').value = '';
+    }
 
     document.getElementById('partyModal').classList.remove('hidden');
 }
@@ -322,7 +740,9 @@ async function deleteParty() {
             partiesData = partiesData.filter(p => p.id !== idToDelete);
             renderKanban(); 
             closeDetailModal();
-            searchCharacter(); 
+            if (document.getElementById('searchInput').value.trim()) {
+                searchCharacter(); 
+            }
         } else {
             console.error('삭제 에러:', error);
         }
@@ -352,33 +772,30 @@ function searchCharacter() {
         return;
     }
 
-    const dayMap = { mon: '월요일', tue: '화요일', wed: '수요일', thu: '목요일', fri: '금요일', sat: '토요일', sun: '일요일' };
+    const dayMap = { mon: '월요일', tue: '화요일', wed: '수요일', thu: '목요일', fri: '금요일', sat: '토요일', sun: '일요일', monthly: '월간' };
 
-   const resultHtml = filtered.map(p => {
-        const bosses = p.bosses ? p.bosses.split(',') : [];
-        const bossBadges = bosses.length > 0 
-            ? bosses.map(b => `<span class="px-2 py-1 text-xs font-bold rounded mr-1 ${getBadgeColor(b)} inline-block mb-1">${b}</span>`).join('')
-            : `<span class="text-sm text-slate-400">선택된 보스 없음</span>`;
+    const resultHtml = filtered.map(p => {
+        const bossBadges = renderBossBadgesHtml(p, 'px-2 py-1 text-xs');
+        const borderClass = getCardStatusClasses(p);
+        const compactChars = renderCompactCharsHtml(p.chars, keywords);
+        const isMonthly = p.bosses && p.bosses.includes('검은마법사');
+        const scheduleBadgeText = isMonthly ? `${p.time}` : `${dayMap[p.day] || ''} ${p.time}`;
+        const scheduleBadgeColor = isMonthly ? 'bg-amber-100 text-amber-800' : 'bg-blue-50 text-blue-600';
 
-        // 주간 현황판과 동일하게 DB 상태 확인 및 테두리 색상 결정
-        const isCleared = p.is_cleared === true;
-        const borderClass = isCleared ? 'border-green-500 bg-green-50' : 'border-red-400 bg-slate-50';
-
-        // class에 borderClass와 border-2 적용, oncontextmenu 추가
         return `
-            <div id="search-${p.id}" onclick="switchTab('kanban')" 
-                 oncontextmenu="toggleCardColor(event, this, '${p.id}')" 
-                 class="${borderClass} border-2 p-4 rounded-lg shadow-sm hover:shadow-md transition cursor-pointer flex flex-col w-fit min-w-[240px] max-w-full">
-                <div class="flex justify-between items-start mb-3 gap-3 shrink-0">
-                    <span class="font-bold text-lg text-slate-800 break-words">${p.title}</span>
-                    <span class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold shrink-0 mt-0.5">${dayMap[p.day]} ${p.time}</span>
+            <div id="search-${p.id}" onclick="handleCardClick(event, '${p.id}')" 
+                 oncontextmenu="handleCardRightClick(event, '${p.id}')" 
+                 class="${borderClass} border-2 p-4 rounded-lg shadow-sm hover:shadow-md transition cursor-pointer flex flex-col w-fit min-w-[250px] max-w-full select-none">
+                <div class="flex justify-between items-start mb-3 gap-2 shrink-0">
+                    <span class="font-bold text-lg text-slate-800 break-words leading-snug">${p.title}</span>
+                    <span class="text-xs ${scheduleBadgeColor} px-2 py-1 rounded-full font-bold shrink-0 mt-0.5">${scheduleBadgeText}</span>
                 </div>
-                <div class="mb-3 shrink-0">
+                <div class="flex flex-wrap gap-1.5 mb-3 shrink-0">
                     ${bossBadges}
                 </div>
-                <div class="text-sm text-slate-600 border-t pt-3 border-slate-200 mt-auto">
-                    <span class="font-bold text-slate-700">참여 명단:</span> 
-                    <div class="mt-1 leading-relaxed break-words">${p.chars}</div>
+                <div class="text-xs text-slate-600 border-t pt-2.5 border-slate-200/80 mt-auto">
+                    <span class="font-bold text-slate-700 mr-1">참여:</span>
+                    <span class="leading-relaxed break-words">${compactChars}</span>
                 </div>
             </div>
         `;
@@ -387,32 +804,80 @@ function searchCharacter() {
     resultArea.innerHTML = resultHtml;
 }
 
-async function toggleCardColor(event, element, partyId) {
-    event.preventDefault(); 
-    event.stopPropagation(); 
+// 모든 뷰(주간 캘린더, 캐릭터 검색 현황판, 상세 모달) 갱신
+function refreshAllViews() {
+    renderKanban();
+    if (document.getElementById('searchInput').value.trim()) {
+        searchCharacter();
+    }
+    if (currentSelectedCardId) {
+        const party = partiesData.find(p => p.id === currentSelectedCardId);
+        if (party) {
+            updateDetailModalView(party);
+        }
+    }
+}
 
-    // 현재 파티 데이터 찾기
+// 개별 보스 뱃지 클릭/우클릭 시 해당 보스만 클리어 토글
+async function toggleBossClear(event, partyId, bossName) {
+    event.preventDefault();
+    event.stopPropagation();
+
     const party = partiesData.find(p => p.id === partyId);
     if (!party) return;
 
-    // 상태 반전 (true <-> false)
-    const newClearedState = !party.is_cleared;
-    party.is_cleared = newClearedState;
+    const allBosses = getBossList(party.bosses);
+    let clearedList = getClearedBossList(party);
 
-    // 시각적 즉시 변경 (대기 시간 없이 바로 색상 전환)
-    if (newClearedState) {
-        element.classList.remove('border-red-400', 'bg-slate-50');
-        element.classList.add('border-green-500', 'bg-green-50');
+    if (clearedList.includes(bossName)) {
+        clearedList = clearedList.filter(b => b !== bossName);
     } else {
-        element.classList.remove('border-green-500', 'bg-green-50');
-        element.classList.add('border-red-400', 'bg-slate-50');
+        clearedList.push(bossName);
     }
 
-    // Supabase DB 업데이트
-    const { error } = await db
-        .from('parties')
-        .update({ is_cleared: newClearedState })
-        .eq('id', partyId);
+    const newClearedBossesStr = clearedList.join(',');
+    const newIsCleared = allBosses.length > 0 && clearedList.length === allBosses.length;
+
+    party.cleared_bosses = newClearedBossesStr;
+    party.is_cleared = newIsCleared;
+    refreshAllViews();
+
+    const { error } = await safeUpdateParty(partyId, { 
+        cleared_bosses: newClearedBossesStr,
+        is_cleared: newIsCleared
+    });
+
+    if (error) {
+        console.error('보스 개별 상태 업데이트 에러:', error);
+        alert('보스 클리어 상태 저장에 실패했습니다.');
+    }
+}
+
+// 카드 전체 우클릭 또는 상세모달 버튼 클릭 시 모든 보스 일괄 완료/미완료 토글
+async function toggleCardColor(event, partyId) {
+    if (event) {
+        event.preventDefault(); 
+        event.stopPropagation(); 
+    }
+    if (!partyId) return;
+
+    const party = partiesData.find(p => p.id === partyId);
+    if (!party) return;
+
+    const allBosses = getBossList(party.bosses);
+    const isCurrentlyAllCleared = isPartyAllCleared(party);
+
+    const newIsCleared = !isCurrentlyAllCleared;
+    const newClearedBossesStr = newIsCleared ? allBosses.join(',') : '';
+
+    party.is_cleared = newIsCleared;
+    party.cleared_bosses = newClearedBossesStr;
+    refreshAllViews();
+
+    const { error } = await safeUpdateParty(partyId, { 
+        is_cleared: newIsCleared,
+        cleared_bosses: newClearedBossesStr
+    });
 
     if (error) {
         console.error('상태 업데이트 에러:', error);

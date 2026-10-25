@@ -1,20 +1,38 @@
-name: Weekly Boss Reset
+name: Boss Reset (Weekly & Monthly)
 
 on:
   schedule:
-    # UTC 시간 기준 수요일 15:00 = 한국 시간 기준 목요일 자정(00:00)
+    # 주간 보스 초기화: UTC 수요일 15:00 = 한국 시간(KST) 목요일 00:00
     - cron: '0 15 * * 3'
+    # 월간 보스(검은마법사) 초기화: UTC 28~31일 15:00 (실행 시 KST 1일인지 체크)
+    - cron: '0 15 28-31 * *'
   workflow_dispatch: # 수동 테스트용 버튼
 
 jobs:
   reset:
     runs-on: ubuntu-latest
     steps:
-      - name: Reset is_cleared to false
+      - name: Reset Weekly Bosses (Every Thursday KST)
+        if: github.event.schedule == '0 15 * * 3' || github.event_name == 'workflow_dispatch'
         run: |
-          curl -X PATCH "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?is_cleared=eq.true" \
+          # 검은마법사가 포함되지 않은 주간 보스 파티 전체 초기화 (%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC = 검은마법사)
+          curl -X PATCH "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?bosses=not.like.*%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC*" \
           -H "apikey: sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
           -H "Authorization: Bearer sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
           -H "Content-Type: application/json" \
           -H "Prefer: return=minimal" \
-          -d '{"is_cleared": false}'
+          -d '{"is_cleared": false, "cleared_bosses": ""}'
+
+      - name: Reset Monthly Boss - Black Mage (1st of Every Month KST)
+        if: github.event.schedule == '0 15 28-31 * *'
+        run: |
+          # 한국 시간(KST) 기준 현재 날짜가 1일인지 확인 (자정 00:00 KST)
+          KST_DAY=$(TZ='Asia/Seoul' date +'%d')
+          if [ "$KST_DAY" = "01" ]; then
+            curl -X PATCH "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?bosses=like.*%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC*" \
+            -H "apikey: sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
+            -H "Authorization: Bearer sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{"is_cleared": false, "cleared_bosses": ""}'
+          fi
