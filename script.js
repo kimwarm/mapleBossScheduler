@@ -34,6 +34,7 @@ let currentBossState = {};
 let editingCardId = null; 
 let currentSelectedCardId = null; 
 let partiesData = []; 
+let characterSpecsMap = new Map(); 
 let sortableInstances = [];
 let isDraggingCard = false;
 
@@ -262,7 +263,51 @@ function getCardStatusClasses(party) {
     }
 }
 
-// 개별 보스 뱃지 HTML 생성 (클리어 시 무난하고 깔끔한 슬레이트 회색 + 취소선 스타일)
+// 캐릭터가 특정 보스에 대해 가진 솔플배율(%) 조회 헬퍼
+function getCharBossMultiplier(charName, bossName) {
+    if (!charName || !bossName) return null;
+    const specs = characterSpecsMap.get(charName.trim());
+    if (!specs || typeof specs !== 'object') return null;
+
+    if (specs[bossName] !== undefined && specs[bossName] !== null && !isNaN(Number(specs[bossName]))) {
+        return Number(specs[bossName]);
+    }
+
+    // 별칭 호환 (예: '익스우' <-> '스우(익스)', '검은마법사(하드)' <-> '검은 마법사(하드)' 등)
+    const normalizedTarget = bossName.replace(/\s+/g, '');
+    for (const [k, v] of Object.entries(specs)) {
+        if (v === undefined || v === null || isNaN(Number(v))) continue;
+        const normalizedKey = k.replace(/\s+/g, '');
+        if (normalizedKey === normalizedTarget) return Number(v);
+        if (bossName === '익스우' && (normalizedKey === '스우(익스)' || normalizedKey === '익스스우')) {
+            return Number(v);
+        }
+    }
+    return null;
+}
+
+// 파티의 특정 보스에 대한 참여 캐릭터들의 배율 총합(파티배율) 텍스트 반환
+function getPartyBossTotalMultiplierText(party, bossName) {
+    if (!party || !party.chars) return '-';
+    const chars = party.chars.split(',').map(c => c.trim()).filter(c => c.length > 0);
+    if (chars.length === 0) return '-';
+
+    let sum = 0;
+    let hasAny = false;
+    chars.forEach(c => {
+        const val = getCharBossMultiplier(c, bossName);
+        if (val !== null) {
+            sum += val;
+            hasAny = true;
+        }
+    });
+
+    if (!hasAny) return '-';
+    const rounded = Math.round(sum * 10) / 10;
+    return `${rounded}%`;
+}
+
+// 개별 보스 뱃지 HTML 생성 (클리어 시 무난하고 깔끔한 슬레이트 회색 + 취소선 스타일, 바로 아래에 합산 배율 표시)
 function renderBossBadgesHtml(party, sizeClass = 'text-xs px-2 py-0.5') {
     const allBosses = getBossList(party.bosses);
     if (allBosses.length === 0) {
@@ -279,10 +324,15 @@ function renderBossBadgesHtml(party, sizeClass = 'text-xs px-2 py-0.5') {
             ? 'bg-slate-200 text-slate-400 line-through font-medium' 
             : `${getBadgeColor(b)} font-bold hover:brightness-110`;
 
-        return `<span onclick="toggleBossClear(event, '${party.id}', '${safeBossName}')" 
-                      oncontextmenu="toggleBossClear(event, '${party.id}', '${safeBossName}')"
-                      title="클릭하여 '${b}' 클리어 상태 변경"
-                      class="${sizeClass} rounded ${badgeStyle} shrink-0 cursor-pointer select-none transition inline-flex items-center">${b}</span>`;
+        const totalMultText = getPartyBossTotalMultiplierText(party, b);
+
+        return `<div class="inline-flex flex-col items-center shrink-0">
+                    <span onclick="toggleBossClear(event, '${party.id}', '${safeBossName}')" 
+                          oncontextmenu="toggleBossClear(event, '${party.id}', '${safeBossName}')"
+                          title="클릭하여 '${b}' 클리어 상태 변경"
+                          class="${sizeClass} rounded ${badgeStyle} shrink-0 cursor-pointer select-none transition inline-flex items-center">${b}</span>
+                    <span class="text-xs font-mono text-slate-500 mt-0.5 leading-none">${totalMultText}</span>
+                </div>`;
     }).join('');
 }
 
@@ -533,9 +583,32 @@ function renderKanban() {
     initSortableLists();
 }
 
+// DB에서 캐릭터별 배율(character_specs) 불러오기
+async function loadCharacterSpecs() {
+    try {
+        const { data, error } = await db.from('character_specs').select('*');
+        if (error) {
+            console.warn('character_specs 불러오기 에러:', error.message);
+            return;
+        }
+        characterSpecsMap.clear();
+        (data || []).forEach(row => {
+            if (row.char_name && row.multipliers) {
+                characterSpecsMap.set(row.char_name.trim(), row.multipliers);
+            }
+        });
+    } catch (e) {
+        console.warn('character_specs 로드 예외:', e);
+    }
+}
+
 // DB에서 데이터 불러오기 (db 객체 사용)
 async function loadParties() {
-    const { data, error } = await db.from('parties').select('*');
+    const [partiesRes] = await Promise.all([
+        db.from('parties').select('*'),
+        loadCharacterSpecs()
+    ]);
+    const { data, error } = partiesRes;
     if (error) {
         console.error('DB 불러오기 에러:', error);
         return;
@@ -668,7 +741,56 @@ function updateDetailModalView(party) {
     }
 
     const chars = party.chars ? party.chars.split(',') : [];
-    document.getElementById('detailChars').innerHTML = chars.map(c => `<div>· ${c.trim()}</div>`).join('');
+    const partyBosses = getBossList(party.bosses);
+    document.getElementById('detailChars').innerHTML = chars.map(c => {
+        const charName = c.trim();
+        if (!charName) return '';
+        if (partyBosses.length === 0) {
+            return `<div>· ${charName}</div>`;
+        }
+        const bossMultItems = partyBosses.map(b => {
+            const shortBossName = b.split('(')[0].trim();
+            const val = getCharBossMultiplier(charName, b);
+            const valStr = val !== null ? `${Math.round(val * 10) / 10}%` : '-';
+            return `${shortBossName} ${valStr}`;
+        });
+        const hasAnyVal = partyBosses.some(b => getCharBossMultiplier(charName, b) !== null);
+        const detailSubText = hasAnyVal
+            ? `<span class="text-xs text-slate-400 font-mono ml-1.5">(${bossMultItems.join(' / ')})</span>`
+            : `<span class="text-xs text-slate-400 font-mono ml-1.5">(-)</span>`;
+        return `<div class="flex flex-wrap items-baseline"><span>· ${charName}</span>${detailSubText}</div>`;
+    }).join('');
+}
+
+// 상세 모달 내 '🔄 배율 새로고침' 버튼 클릭 시 동작
+async function refreshPartySpecs() {
+    const btn = document.getElementById('detailRefreshSpecsBtn');
+    const origText = btn ? btn.innerText : '🔄 배율 새로고침';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⏳ 갱신 중...';
+    }
+
+    try {
+        await loadCharacterSpecs();
+        refreshAllViews();
+
+        const party = partiesData.find(p => p.id === currentSelectedCardId);
+        const partyNames = party && party.chars ? party.chars.split(',').map(c => c.trim()).filter(Boolean).join(', ') : '';
+        alert(
+            `DB에서 최신 배율 데이터를 다시 불러왔습니다!\n\n` +
+            `💡 환산주스탯(maplescouter.com) 사이트는 브라우저 렌더링이 필수이므로, 실시간 크롤링 갱신은 GitHub Actions의 'Update Character Boss Specs' 워크플로우(수동 실행 또는 정기 스케줄)를 통해 자동으로 DB에 반영됩니다.` +
+            (partyNames ? `\n\n현재 파티원: ${partyNames}` : '')
+        );
+    } catch (e) {
+        console.error('배율 새로고침 에러:', e);
+        alert('배율 정보를 불러오는 중 오류가 발생했습니다.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = origText;
+        }
+    }
 }
 
 function showDetailModal(cardId) {

@@ -1,0 +1,33 @@
+name: Update Character Boss Specs
+
+on:
+  schedule:
+    # 매일 한국 시간(KST) 새벽 05:00 (UTC 20:00) 자동 갱신
+    - cron: '0 20 * * *'
+  # GitHub Actions 탭에서 수동 실행 가능
+  workflow_dispatch:
+
+jobs:
+  update-specs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright & Chromium
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Fetch Boss Multipliers and Upsert to Supabase
+        env:
+          SUPABASE_URL: 'https://wwtlccjhiearimyuquwh.supabase.co'
+          SUPABASE_KEY: 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD'
+        run: node scripts/fetch-specs.js
+
