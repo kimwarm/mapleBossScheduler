@@ -148,6 +148,28 @@
         </div>
     </div>
 
+    <!-- GitHub Token 설정 모달 -->
+    <div id="githubTokenModal" class="modal-overlay hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-[420px] relative">
+            <h3 class="text-lg font-bold text-slate-800 mb-2">GitHub Token 설정 (최초 1회)</h3>
+            <p class="text-xs text-slate-500 mb-4 leading-relaxed">
+                웹사이트에서 GitHub Actions를 원격 실행하여 해당 파티 배율을 수집하려면 GitHub Personal Access Token (PAT)이 필요합니다.<br>
+                <span class="text-slate-400">입력된 토큰은 외부에 노출되지 않고 본인 브라우저(localStorage)에만 안전하게 저장됩니다.</span>
+            </p>
+            <div class="mb-4">
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Personal Access Token</label>
+                <input type="password" id="githubPatInput" class="w-full border p-2 text-sm rounded font-mono" placeholder="ghp_... 또는 github_pat_...">
+                <p class="text-[11px] text-blue-600 mt-1.5">
+                    필요 권한: <code>Actions (Read and write)</code>
+                </p>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="closeGithubTokenModal()" class="px-3 py-1.5 text-xs border rounded hover:bg-slate-100 text-slate-600">취소</button>
+                <button type="button" onclick="saveGithubToken()" class="px-3.5 py-1.5 text-xs bg-blue-600 text-white font-semibold rounded hover:bg-blue-700">저장 및 갱신 시작</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Supabase SDK 추가 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js"></script>

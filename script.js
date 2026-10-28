@@ -749,6 +749,9 @@ function updateDetailModalView(party) {
             : `<span class="text-xs text-slate-400 font-mono ml-1.5">(-)</span>`;
         return `<div class="flex flex-wrap items-baseline"><span>· ${charName}</span>${detailSubText}</div>`;
     }).join('');
+
+    // 새로고침 버튼 쿨다운 상태 동기화
+    updateRefreshButtonUI(party.id);
 }
 
 // 세련된 토스트 알림 띄우기
@@ -782,30 +785,203 @@ function showToast(message, type = 'success') {
     }, 3200);
 }
 
-// 상세 모달 내 '🔄 배율 새로고침' 버튼 클릭 시 DB 최신 데이터 동기화
-async function refreshPartySpecs() {
-    const btn = document.getElementById('detailRefreshSpecsBtn');
-    const origHtml = btn ? btn.innerHTML : '🔄 배율 새로고침';
+// GitHub Token 및 쿨다운(텀) 관리 - 3분(180초) 제한
+const REFRESH_COOLDOWN_MS = 180 * 1000;
+let refreshCountdownTimer = null;
+const GITHUB_REPO = 'kimwarm/mapleBossScheduler';
+const GITHUB_WORKFLOW = 'update-specs.yml';
 
+function getPartyCooldownRemaining(partyId) {
+    try {
+        const stored = sessionStorage.getItem(`refresh_cd_${partyId}`);
+        if (!stored) return 0;
+        const elapsed = Date.now() - parseInt(stored, 10);
+        const remaining = Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000);
+        return remaining > 0 ? remaining : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+function setPartyCooldown(partyId) {
+    try {
+        sessionStorage.setItem(`refresh_cd_${partyId}`, Date.now().toString());
+    } catch (e) {}
+}
+
+function updateRefreshButtonUI(partyId) {
+    const btn = document.getElementById('detailRefreshSpecsBtn');
+    if (!btn) return;
+
+    if (refreshCountdownTimer) {
+        clearInterval(refreshCountdownTimer);
+        refreshCountdownTimer = null;
+    }
+
+    const remaining = getPartyCooldownRemaining(partyId);
+    if (remaining > 0) {
+        btn.disabled = true;
+        btn.innerHTML = `⏳ ${remaining}초 후 갱신 가능`;
+        btn.classList.add('opacity-60', 'cursor-not-allowed');
+
+        refreshCountdownTimer = setInterval(() => {
+            const curRemaining = getPartyCooldownRemaining(partyId);
+            if (curRemaining <= 0) {
+                clearInterval(refreshCountdownTimer);
+                refreshCountdownTimer = null;
+                btn.disabled = false;
+                btn.innerHTML = '🔄 배율 새로고침';
+                btn.classList.remove('opacity-60', 'cursor-not-allowed');
+            } else {
+                btn.innerHTML = `⏳ ${curRemaining}초 후 갱신 가능`;
+            }
+        }, 1000);
+    } else {
+        btn.disabled = false;
+        btn.innerHTML = '🔄 배율 새로고침';
+        btn.classList.remove('opacity-60', 'cursor-not-allowed');
+    }
+}
+
+// GitHub 토큰 모달 제어
+function openGithubTokenModal() {
+    const modal = document.getElementById('githubTokenModal');
+    const input = document.getElementById('githubPatInput');
+    if (modal) {
+        if (input) {
+            input.value = localStorage.getItem('maple_github_pat') || '';
+        }
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeGithubTokenModal() {
+    const modal = document.getElementById('githubTokenModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function saveGithubToken() {
+    const input = document.getElementById('githubPatInput');
+    const token = input ? input.value.trim() : '';
+    if (!token) {
+        alert('GitHub Token을 입력해주세요.');
+        return;
+    }
+    localStorage.setItem('maple_github_pat', token);
+    closeGithubTokenModal();
+    showToast('GitHub Token이 저장되었습니다. 갱신을 시작합니다!', 'info');
+    refreshPartySpecs();
+}
+
+// 상세 모달 내 '🔄 배율 새로고침' 버튼 클릭 시 GitHub Actions 트리거 및 수집
+async function refreshPartySpecs() {
+    const party = partiesData.find(p => p.id === currentSelectedCardId);
+    if (!party) {
+        alert('파티 정보를 찾을 수 없습니다.');
+        return;
+    }
+
+    // 1. 쿨다운 검사: 3분(180초) 내 재클릭 방지
+    const remaining = getPartyCooldownRemaining(party.id);
+    if (remaining > 0) {
+        showToast(`⚠️ 방금 갱신된 파티입니다. ${remaining}초 후에 다시 시도할 수 있습니다.`, 'warning');
+        return;
+    }
+
+    // 2. GitHub Token 확인
+    const pat = localStorage.getItem('maple_github_pat');
+    if (!pat) {
+        openGithubTokenModal();
+        return;
+    }
+
+    const btn = document.getElementById('detailRefreshSpecsBtn');
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 불러오는 중...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> GitHub 서버 요청 중...`;
         btn.classList.add('opacity-80', 'cursor-not-allowed');
     }
 
     try {
+        // 3. GitHub Actions workflow_dispatch API 호출
+        showToast('🚀 GitHub Actions에 해당 파티 배율 갱신을 요청했습니다.', 'info');
+        const triggerRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/dispatches`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/vnd.github+json',
+                'Authorization': `Bearer ${pat.trim()}`,
+                'X-GitHub-Api-Version': '2022-11-28'
+            },
+            body: JSON.stringify({
+                ref: 'main',
+                inputs: {
+                    party_id: String(party.id),
+                    party_title: party.title,
+                    chars: party.chars || '',
+                    bosses: party.bosses || ''
+                }
+            })
+        });
+
+        if (triggerRes.status === 401 || triggerRes.status === 403) {
+            localStorage.removeItem('maple_github_pat');
+            showToast('GitHub 토큰 권한이 올바르지 않습니다. 다시 입력해주세요.', 'error');
+            openGithubTokenModal();
+            return;
+        }
+
+        if (!triggerRes.ok && triggerRes.status !== 204) {
+            const errText = await triggerRes.text();
+            throw new Error(`GitHub 요청 실패 (${triggerRes.status}): ${errText}`);
+        }
+
+        // 4. 실행 대기 및 감시 (약 60~90초 소요)
+        if (btn) {
+            btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> GitHub 수집 중... (약 1분)`;
+        }
+
+        const partyChars = party.chars.split(',').map(c => c.trim()).filter(Boolean);
+        const startTime = Date.now();
+        const maxWaitMs = 120000; // 최대 2분 대기
+        let completed = false;
+
+        // 6초 간격으로 Supabase character_specs의 최신 갱신 여부 체크
+        while (Date.now() - startTime < maxWaitMs) {
+            await new Promise(r => setTimeout(r, 6000));
+            
+            // Supabase에서 해당 파티원들의 updated_at 확인
+            const { data, error } = await db
+                .from('character_specs')
+                .select('updated_at')
+                .in('char_name', partyChars)
+                .order('updated_at', { ascending: false })
+                .limit(1);
+
+            if (!error && data && data.length > 0) {
+                const latestUpdate = new Date(data[0].updated_at).getTime();
+                if (latestUpdate >= startTime - 5000) {
+                    completed = true;
+                    break;
+                }
+            }
+        }
+
+        // 5. 완료 처리
         await loadCharacterSpecs();
         refreshAllViews();
-        showToast('DB에서 최신 배율 데이터를 불러왔습니다! 🎉', 'success');
-    } catch (e) {
-        console.error('배율 새로고침 에러:', e);
-        showToast('배율 정보를 불러오는 중 오류가 발생했습니다.', 'error');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = origHtml;
-            btn.classList.remove('opacity-80', 'cursor-not-allowed');
+        setPartyCooldown(party.id);
+        updateRefreshButtonUI(party.id);
+
+        if (completed) {
+            showToast('GitHub Actions에서 최신 배율 반영 완료! 🎉', 'success');
+        } else {
+            showToast('배율 갱신 요청 완료! (DB 반영에 시간이 더 걸릴 수 있습니다)', 'info');
         }
+
+    } catch (e) {
+        console.error('GitHub Actions 트리거 오류:', e);
+        showToast('새로고침 요청 중 오류: ' + e.message, 'error');
+        updateRefreshButtonUI(party.id);
     }
 }
 
@@ -819,6 +995,10 @@ function showDetailModal(cardId) {
 }
 
 function closeDetailModal() {
+    if (refreshCountdownTimer) {
+        clearInterval(refreshCountdownTimer);
+        refreshCountdownTimer = null;
+    }
     document.getElementById('detailModal').classList.add('hidden');
     currentSelectedCardId = null;
 }

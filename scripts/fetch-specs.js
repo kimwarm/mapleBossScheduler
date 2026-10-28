@@ -177,9 +177,36 @@ async function main() {
         fetchExistingSpecsFromSupabase()
     ]);
 
-    const validParties = (parties || []).filter(p => p.chars && p.chars.trim().length > 0 && p.bosses && p.bosses.trim().length > 0);
-    console.log(`총 ${validParties.length}개의 유효 파티 발견`);
-    if (validParties.length === 0) {
+    const targetPartyId = (process.env.TARGET_PARTY_ID || '').trim();
+    const targetChars = (process.env.TARGET_CHARS || '').trim();
+    const targetBosses = (process.env.TARGET_BOSSES || '').trim();
+    const targetTitle = (process.env.TARGET_PARTY_TITLE || '').trim();
+
+    let partiesToProcess = [];
+
+    if (targetChars && targetBosses) {
+        console.log(`🎯 [단일 파티 타겟팅 모드] "${targetTitle || '지정 파티'}" (파티원: ${targetChars} | 보스: ${targetBosses})`);
+        partiesToProcess = [{
+            id: targetPartyId || 'target',
+            title: targetTitle || '지정 파티',
+            chars: targetChars,
+            bosses: targetBosses
+        }];
+    } else if (targetPartyId) {
+        const found = (parties || []).find(p => String(p.id) === targetPartyId);
+        if (found) {
+            console.log(`🎯 [단일 파티 타겟팅 모드] ID ${targetPartyId} ("${found.title}")`);
+            partiesToProcess = [found];
+        } else {
+            console.warn(`⚠️ ID ${targetPartyId} 파티를 DB에서 찾을 수 없어 전체 파티를 진행합니다.`);
+            partiesToProcess = (parties || []).filter(p => p.chars && p.chars.trim().length > 0 && p.bosses && p.bosses.trim().length > 0);
+        }
+    } else {
+        partiesToProcess = (parties || []).filter(p => p.chars && p.chars.trim().length > 0 && p.bosses && p.bosses.trim().length > 0);
+        console.log(`🌐 [전체 파티 모드] 총 ${partiesToProcess.length}개 유효 파티 순차 갱신`);
+    }
+
+    if (partiesToProcess.length === 0) {
         console.log('추출할 파티가 없습니다.');
         return;
     }
@@ -235,8 +262,8 @@ async function main() {
     const collectedSpecs = { ...existingSpecs };
 
     // 파티 단위 순회
-    for (let idx = 0; idx < validParties.length; idx++) {
-        const party = validParties[idx];
+    for (let idx = 0; idx < partiesToProcess.length; idx++) {
+        const party = partiesToProcess[idx];
         const partyChars = party.chars
             .split(',')
             .map(c => c.trim())
@@ -249,7 +276,7 @@ async function main() {
         if (partyChars.length === 0 || partyBosses.length === 0) continue;
 
         const queryStr = partyChars.join(', ');
-        console.log(`\n[파티 ${idx + 1}/${validParties.length}] "${party.title}" (${queryStr}) -> 대상 보스: ${partyBosses.join(', ')}`);
+        console.log(`\n[파티 ${idx + 1}/${partiesToProcess.length}] "${party.title}" (${queryStr}) -> 대상 보스: ${partyBosses.join(', ')}`);
 
         // 만약 화면이 메인으로 튕겼다면 다시 파티 보스컷으로 이동
         if (!page.url().includes('multi-result')) {

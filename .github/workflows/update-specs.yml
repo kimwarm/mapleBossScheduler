@@ -4,8 +4,25 @@ on:
   schedule:
     # 매일 한국 시간(KST) 새벽 05:00 (UTC 20:00) 자동 갱신
     - cron: '0 20 * * *'
-  # GitHub Actions 탭에서 수동 실행 가능
+  # GitHub Actions 탭 또는 웹사이트에서 특정 파티 지정 실행 가능
   workflow_dispatch:
+    inputs:
+      party_id:
+        description: '갱신할 파티 ID (비워두면 전체 파티 갱신)'
+        required: false
+        default: ''
+      party_title:
+        description: '갱신할 파티 이름'
+        required: false
+        default: ''
+      chars:
+        description: '파티원 캐릭터 닉네임 (쉼표 구분)'
+        required: false
+        default: ''
+      bosses:
+        description: '대상 보스 목록 (쉼표 구분)'
+        required: false
+        default: ''
 
 jobs:
   update-specs:
@@ -28,5 +45,9 @@ jobs:
         env:
           SUPABASE_URL: 'https://wwtlccjhiearimyuquwh.supabase.co'
           SUPABASE_KEY: 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD'
+          TARGET_PARTY_ID: ${{ github.event.inputs.party_id }}
+          TARGET_PARTY_TITLE: ${{ github.event.inputs.party_title }}
+          TARGET_CHARS: ${{ github.event.inputs.chars }}
+          TARGET_BOSSES: ${{ github.event.inputs.bosses }}
         run: node scripts/fetch-specs.js
 
