@@ -4,8 +4,7 @@
   "description": "메이플 파티보스 스케줄러",
   "main": "script.js",
   "scripts": {
-    "update-specs": "node scripts/fetch-specs.js",
-    "worker": "node scripts/worker.js"
+    "update-specs": "node scripts/fetch-specs.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

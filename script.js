@@ -749,9 +749,6 @@ function updateDetailModalView(party) {
             : `<span class="text-xs text-slate-400 font-mono ml-1.5">(-)</span>`;
         return `<div class="flex flex-wrap items-baseline"><span>· ${charName}</span>${detailSubText}</div>`;
     }).join('');
-
-    // 새로고침 버튼 쿨다운 상태 동기화
-    updateRefreshButtonUI(party.id);
 }
 
 // 세련된 토스트 알림 띄우기
@@ -785,214 +782,30 @@ function showToast(message, type = 'success') {
     }, 3200);
 }
 
-// 새로고침 쿨다운(텀) 관리 - 60초 제한
-const REFRESH_COOLDOWN_MS = 60 * 1000;
-let refreshCountdownTimer = null;
-
-function getPartyCooldownRemaining(partyId) {
-    try {
-        const stored = sessionStorage.getItem(`refresh_cd_${partyId}`);
-        if (!stored) return 0;
-        const elapsed = Date.now() - parseInt(stored, 10);
-        const remaining = Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000);
-        return remaining > 0 ? remaining : 0;
-    } catch (e) {
-        return 0;
-    }
-}
-
-function setPartyCooldown(partyId) {
-    try {
-        sessionStorage.setItem(`refresh_cd_${partyId}`, Date.now().toString());
-    } catch (e) {}
-}
-
-function updateRefreshButtonUI(partyId) {
-    const btn = document.getElementById('detailRefreshSpecsBtn');
-    if (!btn) return;
-
-    if (refreshCountdownTimer) {
-        clearInterval(refreshCountdownTimer);
-        refreshCountdownTimer = null;
-    }
-
-    const remaining = getPartyCooldownRemaining(partyId);
-    if (remaining > 0) {
-        btn.disabled = true;
-        btn.innerHTML = `⏳ ${remaining}초 후 갱신 가능`;
-        btn.classList.add('opacity-60', 'cursor-not-allowed');
-
-        refreshCountdownTimer = setInterval(() => {
-            const curRemaining = getPartyCooldownRemaining(partyId);
-            if (curRemaining <= 0) {
-                clearInterval(refreshCountdownTimer);
-                refreshCountdownTimer = null;
-                btn.disabled = false;
-                btn.innerHTML = '🔄 배율 새로고침';
-                btn.classList.remove('opacity-60', 'cursor-not-allowed');
-            } else {
-                btn.innerHTML = `⏳ ${curRemaining}초 후 갱신 가능`;
-            }
-        }, 1000);
-    } else {
-        btn.disabled = false;
-        btn.innerHTML = '🔄 배율 새로고침';
-        btn.classList.remove('opacity-60', 'cursor-not-allowed');
-    }
-}
-
-// 상세 모달 내 '🔄 배율 새로고침' 버튼 클릭 시 실시간 큐 연동
+// 상세 모달 내 '🔄 배율 새로고침' 버튼 클릭 시 DB 최신 데이터 동기화
 async function refreshPartySpecs() {
-    const party = partiesData.find(p => p.id === currentSelectedCardId);
-    if (!party) {
-        alert('파티 정보를 찾을 수 없습니다.');
-        return;
-    }
-
-    // 1. 쿨다운 검사: 60초 내 재클릭 방지
-    const remaining = getPartyCooldownRemaining(party.id);
-    if (remaining > 0) {
-        showToast(`⚠️ 방금 갱신된 파티입니다. ${remaining}초 후에 다시 시도할 수 있습니다.`, 'warning');
-        return;
-    }
-
     const btn = document.getElementById('detailRefreshSpecsBtn');
+    const origHtml = btn ? btn.innerHTML : '🔄 배율 새로고침';
+
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 갱신 중... (최대 25초)`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 불러오는 중...`;
         btn.classList.add('opacity-80', 'cursor-not-allowed');
     }
 
-    let queueId = null;
-    let channel = null;
-    let pollInterval = null;
-    let isHandled = false;
-
-    // 대기 종료 및 UI 정리 함수
-    const finalize = (success, msg) => {
-        if (isHandled) return;
-        isHandled = true;
-
-        if (channel) {
-            db.removeChannel(channel).catch(() => {});
-        }
-        if (pollInterval) {
-            clearInterval(pollInterval);
-        }
-
-        if (success) {
-            setPartyCooldown(party.id);
-            updateRefreshButtonUI(party.id);
-            showToast('최신 배율 반영 완료! 🎉', 'success');
-        } else {
-            updateRefreshButtonUI(party.id);
-            alert(msg || '현재 갱신 서버(관리자 PC)가 오프라인이거나 응답이 없습니다.\n최근 저장된 배율을 유지합니다.');
-        }
-    };
-
     try {
-        // 2. 이미 대기열에 동일 파티의 진행 중인 작업이 있는지 중복 체크
-        const { data: activeQueue } = await db
-            .from('refresh_queue')
-            .select('id, status')
-            .eq('party_title', party.title)
-            .in('status', ['pending', 'processing'])
-            .limit(1);
-
-        if (activeQueue && activeQueue.length > 0) {
-            queueId = activeQueue[0].id;
-            console.log('이미 진행 중인 작업 발견, 기존 큐 감시로 연결:', queueId);
-        } else {
-            // 3. refresh_queue 테이블에 신규 작업 요청 등록
-            // party_id: bigint 컬럼에 안전한 정수형만 전달, 그 외는 null
-            let numericPartyId = null;
-            if (typeof party.id === 'number') {
-                numericPartyId = party.id;
-            } else if (typeof party.id === 'string') {
-                const digits = party.id.replace(/\D/g, '');
-                if (digits.length > 0) {
-                    const parsed = parseInt(digits, 10);
-                    if (!isNaN(parsed) && Number.isSafeInteger(parsed)) {
-                        numericPartyId = parsed;
-                    }
-                }
-            }
-
-            const queuePayload = {
-                party_id: numericPartyId,
-                party_title: party.title,
-                chars: party.chars || '',
-                bosses: party.bosses || '',
-                status: 'pending'
-            };
-
-            const { data: inserted, error: insertError } = await db
-                .from('refresh_queue')
-                .insert(queuePayload)
-                .select()
-                .single();
-
-            if (insertError) {
-                throw new Error('큐 등록 실패: ' + insertError.message);
-            }
-
-            queueId = inserted.id;
-        }
-
-        // 4. Realtime 구독으로 상태 변경 감지
-        channel = db.channel(`refresh_queue_${queueId}`)
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'refresh_queue',
-                filter: `id=eq.${queueId}`
-            }, async (payload) => {
-                const newStatus = payload.new ? payload.new.status : null;
-                if (newStatus === 'done') {
-                    await loadCharacterSpecs();
-                    refreshAllViews();
-                    finalize(true);
-                } else if (newStatus === 'failed') {
-                    finalize(false, '배율 갱신 작업이 실패했습니다: ' + (payload.new.error_message || '알 수 없는 오류'));
-                }
-            })
-            .subscribe();
-
-        // 5. 백업용 1.5초 간격 폴링
-        const startTime = Date.now();
-        pollInterval = setInterval(async () => {
-            if (isHandled) return;
-
-            // 25초 타임아웃 검사
-            if (Date.now() - startTime >= 25000) {
-                finalize(false);
-                return;
-            }
-
-            try {
-                const { data, error } = await db
-                    .from('refresh_queue')
-                    .select('*')
-                    .eq('id', queueId)
-                    .single();
-
-                if (!error && data) {
-                    if (data.status === 'done') {
-                        await loadCharacterSpecs();
-                        refreshAllViews();
-                        finalize(true);
-                    } else if (data.status === 'failed') {
-                        finalize(false, '배율 갱신 작업이 실패했습니다: ' + (data.error_message || '알 수 없는 오류'));
-                    }
-                }
-            } catch (err) {
-                console.warn('폴링 체크 중 에러:', err);
-            }
-        }, 1500);
-
+        await loadCharacterSpecs();
+        refreshAllViews();
+        showToast('DB에서 최신 배율 데이터를 불러왔습니다! 🎉', 'success');
     } catch (e) {
-        console.error('새로고침 요청 에러:', e);
-        finalize(false, '새로고침 요청 중 오류가 발생했습니다: ' + e.message);
+        console.error('배율 새로고침 에러:', e);
+        showToast('배율 정보를 불러오는 중 오류가 발생했습니다.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            btn.classList.remove('opacity-80', 'cursor-not-allowed');
+        }
     }
 }
 
@@ -1006,10 +819,6 @@ function showDetailModal(cardId) {
 }
 
 function closeDetailModal() {
-    if (refreshCountdownTimer) {
-        clearInterval(refreshCountdownTimer);
-        refreshCountdownTimer = null;
-    }
     document.getElementById('detailModal').classList.add('hidden');
     currentSelectedCardId = null;
 }
