@@ -19,10 +19,9 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Playwright & Chromium
+      - name: Install Dependencies & Chromium
         run: |
-          npm init -y
-          npm install playwright
+          npm install
           npx playwright install --with-deps chromium
 
       - name: Fetch Boss Multipliers and Upsert to Supabase

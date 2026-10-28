@@ -7,8 +7,12 @@
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+const stealth = require('puppeteer-extra-plugin-stealth')();
 const path = require('path');
+
+// Cloudflare 봇 감지 우회를 위한 Stealth 플러그인 등록
+chromium.use(stealth);
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://wwtlccjhiearimyuquwh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD';
@@ -71,21 +75,19 @@ function resolveBossTarget(bossStr) {
     return null;
 }
 
-// 상주 브라우저 컨텍스트 (싱글톤)
-let browserContext = null;
+// 현재 실행 중인 브라우저 컨텍스트 추적
+let currentBrowserContext = null;
 
-async function getOrInitBrowser() {
-    if (browserContext) return browserContext;
-
-    console.log('🌐 크롤러 백그라운드 브라우저 초기화 중...');
+async function launchCrawlerBrowser() {
+    console.log('🌐 크롤러 브라우저 실행 중...');
     const profilePath = path.join(__dirname, '.chrome-profile');
 
-    browserContext = await chromium.launchPersistentContext(profilePath, {
+    const context = await chromium.launchPersistentContext(profilePath, {
         channel: 'chrome',
         headless: false,
         viewport: { width: 1440, height: 950 },
         args: [
-            '--window-position=-3000,-3000', // 모니터 화면 밖으로 배치하여 화면 방해 차단
+            '--window-position=-3000,-3000', // 모니터 화면 밖으로 배치
             '--window-size=1440,950',
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -93,7 +95,8 @@ async function getOrInitBrowser() {
         ]
     });
 
-    return browserContext;
+    currentBrowserContext = context;
+    return context;
 }
 
 /**
@@ -110,10 +113,12 @@ async function crawlSingleParty(charsStr, bossesStr) {
     const queryStr = partyChars.join(', ');
     console.log(`[크롤링 시작] 파티원: ${queryStr} | 대상 보스: ${partyBosses.join(', ')}`);
 
-    const context = await getOrInitBrowser();
-    const page = await context.newPage();
+    let context = null;
 
     try {
+        context = await launchCrawlerBrowser();
+        const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+
         console.log('1. https://maplescouter.com/ko/multi-result 접속 중...');
         await page.goto('https://maplescouter.com/ko/multi-result', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForTimeout(2500);
@@ -260,7 +265,12 @@ async function crawlSingleParty(charsStr, bossesStr) {
             console.log(`  💾 ${upsertRows.length}명 캐릭터 배율 character_specs 저장 완료!`);
         }
     } finally {
-        await page.close().catch(() => {});
+        if (context) {
+            console.log('🚪 크롤링 완료: 크롬 브라우저를 종료합니다.');
+            await context.close().catch(() => {});
+            currentBrowserContext = null;
+            await new Promise(r => setTimeout(r, 600)); // 파일 락 해제 안전 대기
+        }
     }
 }
 
@@ -327,12 +337,9 @@ function enqueueItem(item) {
 async function startWorker() {
     console.log('========================================================');
     console.log('🚀 메이플 파티보스 배율 실시간 워커 (Realtime Worker) 가동 중');
-    console.log('   - 모니터 화면에 브라우저 창이 뜨지 않고 백그라운드 처리');
-    console.log('   - 웹사이트에서 [🔄 배율 새로고침] 버튼을 누르면 즉시 수집');
+    console.log('   - 웹사이트에서 [🔄 배율 새로고침] 버튼을 누르면 크롬 실행');
+    console.log('   - 배율 수집 완료 시 크롬창이 자동으로 꺼집니다.');
     console.log('========================================================');
-
-    // 브라우저 1회 사전 초기화 (상주)
-    await getOrInitBrowser();
 
     // 1. 서버 켜기 전 쌓여있던 오래된(3분 이상) pending 작업은 정리하고, 최신 것만 처리
     const { data: pendingItems, error: selectError } = await supabase
@@ -385,16 +392,16 @@ async function startWorker() {
 // 안전한 프로세스 종료 처리
 process.on('SIGINT', async () => {
     console.log('\n워커를 안전하게 종료하는 중...');
-    if (browserContext) await browserContext.close().catch(() => {});
+    if (currentBrowserContext) await currentBrowserContext.close().catch(() => {});
     process.exit(0);
 });
 process.on('SIGTERM', async () => {
-    if (browserContext) await browserContext.close().catch(() => {});
+    if (currentBrowserContext) await currentBrowserContext.close().catch(() => {});
     process.exit(0);
 });
 
 startWorker().catch(async err => {
     console.error('워커 초기화 오류:', err);
-    if (browserContext) await browserContext.close().catch(() => {});
+    if (currentBrowserContext) await currentBrowserContext.close().catch(() => {});
     process.exit(1);
 });

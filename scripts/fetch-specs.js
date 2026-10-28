@@ -4,8 +4,12 @@
  */
 
 require('dotenv').config();
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+const stealth = require('puppeteer-extra-plugin-stealth')();
 const path = require('path');
+
+// Cloudflare 봇 감지 우회를 위한 Stealth 플러그인 등록
+chromium.use(stealth);
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://wwtlccjhiearimyuquwh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD';
@@ -180,21 +184,43 @@ async function main() {
         return;
     }
 
-    const isHeadless = process.env.HEADLESS === 'true';
-    console.log(`브라우저 실행 모드: ${isHeadless ? 'Headless' : 'Headed (실제 브라우저 창 표시)'}`);
+    const isCI = !!process.env.CI;
+    const isHeadless = isCI || process.env.HEADLESS === 'true';
+    console.log(`브라우저 실행 모드: ${isHeadless ? 'Headless' : 'Headed (실제 브라우저 창 표시)'} (CI 환경: ${isCI ? 'YES' : 'NO'})`);
 
     const profilePath = path.join(__dirname, '.chrome-profile');
-    const context = await chromium.launchPersistentContext(profilePath, {
-        channel: 'chrome',
+    const launchOptions = {
         headless: isHeadless,
         viewport: { width: 1440, height: 950 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        locale: 'ko-KR',
+        timezoneId: 'Asia/Seoul',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
+            '--disable-dev-shm-usage',
             '--window-size=1440,950'
         ]
-    });
+    };
+
+    // 로컬 환경일 때만 설치된 Google Chrome 채널 사용 시도 (GitHub Actions Linux 러너에서는 기본 Playwright Chromium 사용)
+    if (!isCI && process.env.USE_CHROME_CHANNEL !== 'false') {
+        launchOptions.channel = 'chrome';
+    }
+
+    let context;
+    try {
+        context = await chromium.launchPersistentContext(profilePath, launchOptions);
+    } catch (launchErr) {
+        if (launchOptions.channel) {
+            console.warn(`⚠️ 'chrome' 채널 실행 실패 (${launchErr.message}), 기본 Chromium으로 재시도합니다...`);
+            delete launchOptions.channel;
+            context = await chromium.launchPersistentContext(profilePath, launchOptions);
+        } else {
+            throw launchErr;
+        }
+    }
 
     const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
     console.log('2. https://maplescouter.com/ko/multi-result 접속 중...');
