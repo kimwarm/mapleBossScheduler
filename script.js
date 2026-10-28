@@ -821,7 +821,7 @@ function updateRefreshButtonUI(partyId) {
     const remaining = getPartyCooldownRemaining(partyId);
     if (remaining > 0) {
         btn.disabled = true;
-        btn.innerHTML = `⏳ ${remaining}초 후 갱신 가능`;
+        btn.innerHTML = `⏳ ${remaining}초 대기`;
         btn.classList.add('opacity-60', 'cursor-not-allowed');
 
         refreshCountdownTimer = setInterval(() => {
@@ -830,15 +830,15 @@ function updateRefreshButtonUI(partyId) {
                 clearInterval(refreshCountdownTimer);
                 refreshCountdownTimer = null;
                 btn.disabled = false;
-                btn.innerHTML = '🔄 배율 새로고침';
+                btn.innerHTML = '🔄 배율 갱신';
                 btn.classList.remove('opacity-60', 'cursor-not-allowed');
             } else {
-                btn.innerHTML = `⏳ ${curRemaining}초 후 갱신 가능`;
+                btn.innerHTML = `⏳ ${curRemaining}초 대기`;
             }
         }, 1000);
     } else {
         btn.disabled = false;
-        btn.innerHTML = '🔄 배율 새로고침';
+        btn.innerHTML = '🔄 배율 갱신';
         btn.classList.remove('opacity-60', 'cursor-not-allowed');
     }
 }
@@ -873,7 +873,7 @@ function saveGithubToken() {
     refreshPartySpecs();
 }
 
-// 상세 모달 내 '🔄 배율 새로고침' 버튼 클릭 시 GitHub Actions 트리거 및 수집
+// 상세 모달 내 '🔄 배율 갱신' 버튼 클릭 시 GitHub Actions 트리거 및 수집
 async function refreshPartySpecs() {
     const party = partiesData.find(p => p.id === currentSelectedCardId);
     if (!party) {
@@ -898,7 +898,7 @@ async function refreshPartySpecs() {
     const btn = document.getElementById('detailRefreshSpecsBtn');
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> GitHub 서버 요청 중...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 요청 중...`;
         btn.classList.add('opacity-80', 'cursor-not-allowed');
     }
 
@@ -937,7 +937,7 @@ async function refreshPartySpecs() {
 
         // 4. 실행 대기 및 감시 (약 60~90초 소요)
         if (btn) {
-            btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> GitHub 수집 중... (약 1분)`;
+            btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 수집 중...`;
         }
 
         const partyChars = party.chars.split(',').map(c => c.trim()).filter(Boolean);
