@@ -403,18 +403,14 @@ function renderPartyCardHtml(p) {
     const charListHtml = renderCompactCharsHtml(p.chars);
     const bossTagsHtml = renderBossBadgesHtml(p, 'text-xs px-2 py-0.5');
     const borderClass = getCardStatusClasses(p);
-    const timeLabel = p.time || '일정 미정';
 
     return `
         <div id="${p.id}" data-party-id="${p.id}" onclick="handleCardClick(event, '${p.id}')" 
              oncontextmenu="handleCardRightClick(event, '${p.id}')"
              class="party-card ${borderClass} border-2 p-2.5 rounded cursor-pointer hover:shadow-md transition flex flex-col w-full select-none">
-            <div class="flex justify-between items-start mb-2 shrink-0 gap-2">
-                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-                    <span class="font-bold text-sm text-slate-800 break-words leading-tight" title="${p.title}">${p.title}</span>
-                    ${bossTagsHtml}
-                </div>
-                <span class="text-[11px] bg-slate-200/90 text-slate-700 px-1.5 py-0.5 rounded font-mono shrink-0 mt-0.5">${timeLabel}</span>
+            <div class="flex flex-wrap items-center gap-1.5 min-w-0 mb-2 shrink-0">
+                <span class="font-bold text-sm text-slate-800 break-words leading-tight" title="${p.title}">${p.title}</span>
+                ${bossTagsHtml}
             </div>
             <div class="border-t pt-1.5 border-slate-200/80 mt-auto">
                 <div class="flex flex-wrap items-center gap-y-0.5 text-xs text-slate-700 leading-snug">${charListHtml}</div>
@@ -627,9 +623,7 @@ document.getElementById('addPartyForm').addEventListener('submit', async functio
     const isMonthly = bossesString.includes('검은마법사');
 
     const day = isMonthly ? 'monthly' : document.getElementById('inputDay').value;
-    const time = isMonthly 
-        ? document.getElementById('inputMonthlyMemo').value.trim() 
-        : document.getElementById('inputTime').value.trim();
+    const time = ''; // 시간 입력 필드 제거에 따른 빈 문자열 처리
 
     if (!title) {
         alert('파티 이름을 입력해주세요.');
@@ -639,11 +633,6 @@ document.getElementById('addPartyForm').addEventListener('submit', async functio
     if (!chars) {
         alert('참여 캐릭터를 입력해주세요.');
         document.getElementById('inputChar').focus();
-        return;
-    }
-    if (!time) {
-        alert(isMonthly ? '월간 보스 일정(날짜/메모)을 입력해주세요.' : '출발 시간을 입력해주세요.');
-        document.getElementById(isMonthly ? 'inputMonthlyMemo' : 'inputTime').focus();
         return;
     }
 
@@ -723,9 +712,9 @@ function updateDetailModalView(party) {
 
     document.getElementById('detailTitle').innerText = party.title;
     if (isMonthly) {
-        document.getElementById('detailTime').innerText = `일정/메모: ${party.time}`;
+        document.getElementById('detailTime').innerText = `월간 보스 (검은마법사)`;
     } else {
-        document.getElementById('detailTime').innerText = `출발 시간: ${dayMap[party.day] || ''} ${party.time}`;
+        document.getElementById('detailTime').innerText = `요일: ${dayMap[party.day] || '미정'}`;
     }
 
     document.getElementById('detailBosses').innerHTML = renderBossBadgesHtml(party, 'px-2.5 py-1 text-xs');
@@ -1054,14 +1043,11 @@ function editParty() {
     renderBossToggles();
 
     if (isMonthlyBossSelectedInModal()) {
-        document.getElementById('inputMonthlyMemo').value = partyToEdit.time || '';
         document.getElementById('inputDay').value = 'mon';
-        document.getElementById('inputTime').value = '';
     } else {
         document.getElementById('inputDay').value = partyToEdit.day && partyToEdit.day !== 'monthly' ? partyToEdit.day : 'mon';
-        document.getElementById('inputTime').value = partyToEdit.time || '';
-        document.getElementById('inputMonthlyMemo').value = '';
     }
+    syncScheduleInputMode();
 
     document.getElementById('partyModal').classList.remove('hidden');
 }
@@ -1119,7 +1105,7 @@ function searchCharacter() {
         const borderClass = getCardStatusClasses(p);
         const compactChars = renderCompactCharsHtml(p.chars, keywords);
         const isMonthly = p.bosses && p.bosses.includes('검은마법사');
-        const scheduleBadgeText = isMonthly ? `${p.time}` : `${dayMap[p.day] || ''} ${p.time}`;
+        const scheduleBadgeText = isMonthly ? '월간' : (dayMap[p.day] || '');
         const scheduleBadgeColor = isMonthly ? 'bg-amber-100 text-amber-800' : 'bg-blue-50 text-blue-600';
 
         return `

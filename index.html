@@ -81,31 +81,24 @@
                             <input type="text" id="inputChar" class="w-full border p-2 rounded" placeholder="닉네임 (쉼표로 구분)">
                         </div>
 
-                        <!-- 주간 보스용: 요일 + 시간 입력 -->
-                        <div id="weeklyScheduleInputs" class="flex gap-3">
-                            <div class="flex-1">
-                                <label class="block text-sm font-medium mb-1">요일</label>
-                                <select id="inputDay" class="w-full border p-2 rounded">
-                                    <option value="mon">월요일</option>
-                                    <option value="tue">화요일</option>
-                                    <option value="wed">수요일</option>
-                                    <option value="thu">목요일</option>
-                                    <option value="fri">금요일</option>
-                                    <option value="sat">토요일</option>
-                                    <option value="sun">일요일</option>
-                                </select>
-                            </div>
-                            <div class="flex-1">
-                                <label class="block text-sm font-medium mb-1">시간</label>
-                                <input type="text" id="inputTime" class="w-full border p-2 rounded" placeholder="예: 22:00, 미정">
-                            </div>
+                        <!-- 주간 보스용: 요일 선택 -->
+                        <div id="weeklyScheduleInputs" class="mb-4">
+                            <label class="block text-sm font-medium mb-1">요일</label>
+                            <select id="inputDay" class="w-full border p-2 rounded">
+                                <option value="mon">월요일</option>
+                                <option value="tue">화요일</option>
+                                <option value="wed">수요일</option>
+                                <option value="thu">목요일</option>
+                                <option value="fri">금요일</option>
+                                <option value="sat">토요일</option>
+                                <option value="sun">일요일</option>
+                            </select>
                         </div>
 
-                        <!-- 월간 보스(검은마법사)용: 날짜/메모 자유 입력 -->
-                        <div id="monthlyScheduleInputs" class="hidden">
-                            <label class="block text-sm font-medium mb-1 text-slate-700">월간 보스 일정 (날짜 / 메모)</label>
-                            <input type="text" id="inputMonthlyMemo" class="w-full border border-slate-300 bg-slate-50 p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="예: 매월 15일 21:00, 첫째주 일요일 밤 등">
-                            <p class="text-[11px] text-slate-400 mt-1">검은마법사는 요일 기둥 대신 하단 전용 구역에 표시됩니다.</p>
+                        <!-- 월간 보스(검은마법사)용: 전용 안내 문구 -->
+                        <div id="monthlyScheduleInputs" class="hidden mb-4 p-3 bg-slate-50 border border-slate-200 rounded">
+                            <div class="text-sm font-medium text-slate-700">월간 보스 (검은마법사)</div>
+                            <p class="text-xs text-slate-400 mt-1">요일 기둥 대신 화면 하단의 월간 전용 구역에 표시됩니다.</p>
                         </div>
                     </div>
 
