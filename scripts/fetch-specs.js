@@ -101,47 +101,161 @@ async function upsertSpecsToSupabase(rows) {
 }
 
 /**
- * Cloudflare 보안 확인 자동 시도 및 사용자 수동 클릭 대기
+ * 전면 배너 광고 모달("오늘 다시 보지 않기" / "닫기") 닫기 헬퍼
  */
-async function waitForVerificationPass(page, timeoutMs = 60000) {
+async function dismissAdPopups(page) {
+    await page.evaluate(() => {
+        const targets = ['오늘 다시 보지 않기', '닫기'];
+        const els = [...document.querySelectorAll('button, div, span, a')].filter(el => {
+            if (el.children.length > 0) return false;
+            const text = (el.innerText || el.textContent || '').trim();
+            if (!targets.includes(text)) return false;
+            const style = window.getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+        });
+        for (const btn of els) {
+            try { btn.click(); } catch (e) {}
+        }
+    }).catch(() => {});
+}
+
+/**
+ * Cloudflare 보안 확인("사람 확인이 필요해요" 모달 및 Turnstile 체크박스) 정밀 감지 및 자동 클릭 통과
+ * @returns {Promise<{ passed: boolean, clickedChallenge: boolean }>}
+ */
+async function waitForVerificationPass(page, timeoutMs = 45000) {
     const start = Date.now();
-    let noticed = false;
+    let clickedChallenge = false;
 
     while (Date.now() - start < timeoutMs) {
-        const isChallenge = await page.evaluate(() => {
-            const body = document.body ? document.body.innerText : '';
-            const dialog = document.querySelector('div[role="dialog"]');
-            const hasDialog = dialog && window.getComputedStyle(dialog).display !== 'none' && parseFloat(window.getComputedStyle(dialog).opacity || '1') > 0.2;
-            return body.includes('보안 확인 수행 중') || hasDialog || document.title.includes('Just a moment');
-        }).catch(() => false);
+        // 1. 현재 화면에 "사람 확인이 필요해요" 모달이나 Cloudflare 보안 확인 창이 떠 있는지 정밀 검사
+        const challengeState = await page.evaluate(() => {
+            const bodyText = document.body ? document.body.innerText : '';
+            const title = document.title || '';
 
-        if (!isChallenge) {
-            return true;
+            // "사람 확인이 필요해요" 텍스트 요소 탐색
+            const allEls = [...document.querySelectorAll('*')];
+            const promptEl = allEls.find(el => {
+                if (el.children.length > 2) return false;
+                const t = (el.innerText || '').trim();
+                if (!t.includes('사람 확인이 필요해요') && !t.includes('보안 확인을 완료해 주세요')) return false;
+                const style = window.getComputedStyle(el);
+                const r = el.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0.2 && r.width > 0;
+            });
+
+            if (promptEl) {
+                // 모달 카드 컨테이너로 거슬러 올라가 위치 파악
+                let card = promptEl.parentElement;
+                while (card && card !== document.body) {
+                    const r = card.getBoundingClientRect();
+                    const style = window.getComputedStyle(card);
+                    if (
+                        r.width >= 280 && r.width <= 620 &&
+                        r.height >= 160 && r.height <= 550 &&
+                        style.display !== 'none' &&
+                        style.visibility !== 'hidden' &&
+                        parseFloat(style.opacity || '1') > 0.2
+                    ) {
+                        // 카드 내부에서 Turnstile 위젯 컨테이너(약 300x65) 탐색
+                        const innerEls = [...card.querySelectorAll('div, iframe')];
+                        const widgetEl = innerEls.find(c => {
+                            const wr = c.getBoundingClientRect();
+                            return wr.width >= 250 && wr.width <= 340 && wr.height >= 45 && wr.height <= 90;
+                        });
+                        if (widgetEl) {
+                            const wr = widgetEl.getBoundingClientRect();
+                            return {
+                                active: true,
+                                source: 'widget-div',
+                                x: wr.left + 28,
+                                y: wr.top + wr.height / 2
+                            };
+                        }
+
+                        // 위젯 div를 직접 못 찾은 경우: 상단 문구와 하단("다시 묻지 않아요") 문구 사이 중심 계산
+                        const footerEl = innerEls.find(c => (c.innerText || '').includes('다시 묻지 않아요'));
+                        const promptRect = promptEl.getBoundingClientRect();
+                        if (footerEl) {
+                            const footerRect = footerEl.getBoundingClientRect();
+                            return {
+                                active: true,
+                                source: 'between-texts',
+                                x: (r.left + r.width / 2) - 150 + 28,
+                                y: (promptRect.bottom + 24 + footerRect.top) / 2
+                            };
+                        }
+
+                        return {
+                            active: true,
+                            source: 'card-estimate',
+                            x: (r.left + r.width / 2) - 150 + 28,
+                            y: r.top + r.height * 0.60
+                        };
+                    }
+                    card = card.parentElement;
+                }
+            }
+
+            // 전체 화면 Cloudflare 챌린지 검사
+            if (
+                bodyText.includes('보안 확인 수행 중') ||
+                bodyText.includes('사람인지 확인하십시오') ||
+                title.includes('Just a moment')
+            ) {
+                return { active: true, source: 'fullpage', x: null, y: null };
+            }
+
+            return { active: false };
+        }).catch(() => ({ active: false }));
+
+        if (!challengeState.active) {
+            // 보안 창이 없으면 이벤트/광고 팝업("오늘 다시 보지 않기", "닫기") 정리 후 통과
+            await dismissAdPopups(page);
+            return { passed: true, clickedChallenge };
         }
 
-        if (!noticed) {
-            console.log('👉 [보안 확인 필요] 화면에 [사람인지 확인하십시오] 체크박스가 보이면 마우스로 한 번 클릭해주세요!');
-            noticed = true;
-        }
+        clickedChallenge = true;
+        console.log(`  🛡️ [보안 확인 감지: ${challengeState.source}] Turnstile 체크박스 자동 클릭 시도...`);
 
-        // 봇 자동 클릭 시도
+        let frameClicked = false;
+        // 1순위: Playwright 프레임 목록에서 Turnstile iframe 직접 타겟팅
         for (const f of page.frames()) {
             const u = f.url();
-            if (u.includes('challenges') || u.includes('turnstile')) {
+            if (u.includes('challenges.cloudflare.com') || u.includes('turnstile')) {
                 try {
                     const box = await f.locator('body').boundingBox();
-                    if (box && box.width > 0) {
-                        await page.mouse.click(box.x + 28, box.y + box.height / 2);
+                    if (box && box.width > 50 && box.height > 30) {
+                        const targetX = box.x + 28;
+                        const targetY = box.y + box.height / 2;
+                        await page.mouse.move(targetX, targetY, { steps: 12 });
+                        await page.waitForTimeout(100);
+                        await f.locator('body').click({ position: { x: 28, y: Math.round(box.height / 2) }, delay: 60 });
+                        frameClicked = true;
+                        console.log(`  ✅ Turnstile iframe 체크박스 클릭 완료 (${Math.round(targetX)}, ${Math.round(targetY)})`);
+                        break;
                     }
                 } catch (e) {}
             }
         }
-        await page.mouse.click(605, 540).catch(() => {});
-        await page.mouse.click(202, 355).catch(() => {});
 
-        await page.waitForTimeout(1500);
+        // 2순위: Closed Shadow DOM 등으로 iframe 접근이 막힌 경우 모달 내 계산된 좌표로 정밀 클릭
+        if (!frameClicked && challengeState.x && challengeState.y) {
+            await page.mouse.move(challengeState.x, challengeState.y, { steps: 15 });
+            await page.waitForTimeout(120);
+            await page.mouse.down();
+            await page.waitForTimeout(70);
+            await page.mouse.up();
+            console.log(`  ✅ 모달 내 체크박스 좌표 클릭 완료 (${Math.round(challengeState.x)}, ${Math.round(challengeState.y)})`);
+        }
+
+        // 클릭 후 Cloudflare 인증 스피너가 완료되고 모달이 닫힐 때까지 충분히 대기 (중복 클릭 방지)
+        await page.waitForTimeout(3500);
     }
-    return false;
+
+    await dismissAdPopups(page);
+    return { passed: false, clickedChallenge };
 }
 
 /**
@@ -212,8 +326,9 @@ async function main() {
     }
 
     const isCI = !!process.env.CI;
-    const isHeadless = isCI || process.env.HEADLESS === 'true';
-    console.log(`브라우저 실행 모드: ${isHeadless ? 'Headless' : 'Headed (실제 브라우저 창 표시)'} (CI 환경: ${isCI ? 'YES' : 'NO'})`);
+    // GitHub Actions에서도 xvfb-run 가상 디스플레이를 통해 Headed(headless: false) 모드로 실행하여 Turnstile 통과율을 극대화
+    const isHeadless = process.env.HEADLESS === 'true';
+    console.log(`브라우저 실행 모드: ${isHeadless ? 'Headless' : 'Headed (실제/가상 디스플레이)'} (CI 환경: ${isCI ? 'YES' : 'NO'})`);
 
     const profilePath = path.join(__dirname, '.chrome-profile');
     const launchOptions = {
@@ -231,8 +346,7 @@ async function main() {
         ]
     };
 
-    // 로컬 환경일 때만 설치된 Google Chrome 채널 사용 시도 (GitHub Actions Linux 러너에서는 기본 Playwright Chromium 사용)
-    if (!isCI && process.env.USE_CHROME_CHANNEL !== 'false') {
+    if (process.env.USE_CHROME_CHANNEL !== 'false') {
         launchOptions.channel = 'chrome';
     }
 
@@ -278,36 +392,51 @@ async function main() {
         const queryStr = partyChars.join(', ');
         console.log(`\n[파티 ${idx + 1}/${partiesToProcess.length}] "${party.title}" (${queryStr}) -> 대상 보스: ${partyBosses.join(', ')}`);
 
-        // 만약 화면이 메인으로 튕겼다면 다시 파티 보스컷으로 이동
+        // 만약 화면이 메인이나 다른 페이지로 이동했다면 다시 파티 보스컷으로 이동
         if (!page.url().includes('multi-result')) {
             await page.goto('https://maplescouter.com/ko/multi-result', { waitUntil: 'domcontentloaded' });
-            await page.waitForTimeout(2000);
-            await waitForVerificationPass(page, 15000);
+            await page.waitForTimeout(2500);
+            await waitForVerificationPass(page, 25000);
+        } else {
+            await dismissAdPopups(page);
         }
 
-        // 1단계: 파티원 검색창 찾기 및 입력
-        const inputLoc = page.locator('div:has-text("파티원 검색")').locator('input').last();
+        // 1단계: 파티원 검색창 찾기 및 입력 (Enter 키만 사용하여 하단 배너 오클릭 방지)
+        const inputLoc = page.locator('input[placeholder*="파티원"], input[placeholder*="구분"], input[placeholder*="닉네임"]').last();
         try {
             await inputLoc.waitFor({ state: 'visible', timeout: 10000 });
             await inputLoc.click({ force: true });
+            await inputLoc.fill('');
             await inputLoc.fill(queryStr);
-            await page.keyboard.press('Enter');
-
-            const searchBtn = page.locator('div:has-text("파티원 검색")').locator('button, svg').last();
-            if ((await searchBtn.count()) > 0) {
-                await searchBtn.click({ force: true }).catch(() => {});
-            }
+            await inputLoc.press('Enter');
         } catch (err) {
             console.warn(`  ⚠️ 검색창 입력 실패, 페이지 새로고침 시도: ${err.message}`);
             await page.goto('https://maplescouter.com/ko/multi-result', { waitUntil: 'domcontentloaded' });
             await page.waitForTimeout(3000);
-            await waitForVerificationPass(page, 20000);
+            await waitForVerificationPass(page, 25000);
             continue;
         }
 
-        console.log('  검색 결과 로딩 대기...');
-        await page.waitForTimeout(3500);
-        await waitForVerificationPass(page, 10000);
+        console.log('  검색 결과 로딩 및 보안 확인 대기...');
+        await page.waitForTimeout(2500);
+        const verifyAfterSearch = await waitForVerificationPass(page, 30000);
+
+        // 만약 검색 직후 "사람 확인이 필요해요" 모달이 떠서 방금 체크박스를 클릭해 통과했다면,
+        // 막혔던 검색 요청을 다시 실행하기 위해 Enter를 한 번 더 입력
+        if (verifyAfterSearch.clickedChallenge) {
+            console.log('  🔄 보안 확인 통과 완료 -> 파티원 검색 재실행...');
+            if (!page.url().includes('multi-result')) {
+                await page.goto('https://maplescouter.com/ko/multi-result', { waitUntil: 'domcontentloaded' });
+                await page.waitForTimeout(2000);
+                await dismissAdPopups(page);
+            }
+            await inputLoc.click({ force: true }).catch(() => {});
+            await inputLoc.fill(queryStr).catch(() => {});
+            await inputLoc.press('Enter').catch(() => {});
+            await page.waitForTimeout(3500);
+        } else {
+            await page.waitForTimeout(1500);
+        }
 
         // 2단계 & 3단계: 보스 버튼 클릭 및 배율 수집
         for (const bossKey of partyBosses) {

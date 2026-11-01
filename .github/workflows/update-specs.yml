@@ -36,12 +36,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Dependencies & Chromium
+      - name: Install Dependencies & Chrome
         run: |
           npm install
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chrome chromium
 
-      - name: Fetch Boss Multipliers and Upsert to Supabase
+      - name: Fetch Boss Multipliers and Upsert to Supabase (via Xvfb Headed Display)
         env:
           SUPABASE_URL: 'https://wwtlccjhiearimyuquwh.supabase.co'
           SUPABASE_KEY: 'sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD'
@@ -49,5 +49,5 @@ jobs:
           TARGET_PARTY_TITLE: ${{ github.event.inputs.party_title }}
           TARGET_CHARS: ${{ github.event.inputs.chars }}
           TARGET_BOSSES: ${{ github.event.inputs.bosses }}
-        run: node scripts/fetch-specs.js
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1440x950x24" node scripts/fetch-specs.js
 
