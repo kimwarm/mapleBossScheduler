@@ -785,11 +785,9 @@ function showToast(message, type = 'success') {
     }, 3200);
 }
 
-// GitHub Token 및 쿨다운(텀) 관리 - 3분(180초) 제한
-const REFRESH_COOLDOWN_MS = 180 * 1000;
+// 파티별 새로고침 쿨다운(텀) 관리 - 60초 제한
+const REFRESH_COOLDOWN_MS = 60 * 1000;
 let refreshCountdownTimer = null;
-const GITHUB_REPO = 'kimwarm/mapleBossScheduler';
-const GITHUB_WORKFLOW = 'update-specs.yml';
 
 function getPartyCooldownRemaining(partyId) {
     try {
@@ -843,37 +841,7 @@ function updateRefreshButtonUI(partyId) {
     }
 }
 
-// GitHub 토큰 모달 제어
-function openGithubTokenModal() {
-    const modal = document.getElementById('githubTokenModal');
-    const input = document.getElementById('githubPatInput');
-    if (modal) {
-        if (input) {
-            input.value = localStorage.getItem('maple_github_pat') || '';
-        }
-        modal.classList.remove('hidden');
-    }
-}
-
-function closeGithubTokenModal() {
-    const modal = document.getElementById('githubTokenModal');
-    if (modal) modal.classList.add('hidden');
-}
-
-function saveGithubToken() {
-    const input = document.getElementById('githubPatInput');
-    const token = input ? input.value.trim() : '';
-    if (!token) {
-        alert('GitHub Token을 입력해주세요.');
-        return;
-    }
-    localStorage.setItem('maple_github_pat', token);
-    closeGithubTokenModal();
-    showToast('GitHub Token이 저장되었습니다. 갱신을 시작합니다!', 'info');
-    refreshPartySpecs();
-}
-
-// 상세 모달 내 '🔄 배율 갱신' 버튼 클릭 시 GitHub Actions 트리거 및 수집
+// 상세 모달 내 '🔄 배율 갱신' 버튼 클릭 시 해당 파티 배율 실시간 수집 요청 (로컬 워커 연동)
 async function refreshPartySpecs() {
     const party = partiesData.find(p => p.id === currentSelectedCardId);
     if (!party) {
@@ -881,106 +849,128 @@ async function refreshPartySpecs() {
         return;
     }
 
-    // 1. 쿨다운 검사: 3분(180초) 내 재클릭 방지
+    // 1. 쿨다운 검사: 60초 내 재클릭 방지
     const remaining = getPartyCooldownRemaining(party.id);
     if (remaining > 0) {
-        showToast(`⚠️ 방금 갱신된 파티입니다. ${remaining}초 후에 다시 시도할 수 있습니다.`, 'warning');
-        return;
-    }
-
-    // 2. GitHub Token 확인
-    const pat = localStorage.getItem('maple_github_pat');
-    if (!pat) {
-        openGithubTokenModal();
+        showToast(`방금 갱신한 파티입니다. ${remaining}초 후에 다시 시도해주세요.`, 'info');
         return;
     }
 
     const btn = document.getElementById('detailRefreshSpecsBtn');
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 요청 중...`;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 수집 중...`;
         btn.classList.add('opacity-80', 'cursor-not-allowed');
     }
 
     try {
-        // 3. GitHub Actions workflow_dispatch API 호출
-        showToast('🚀 GitHub Actions에 해당 파티 배율 갱신을 요청했습니다.', 'info');
-        const triggerRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/dispatches`, {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/vnd.github+json',
-                'Authorization': `Bearer ${pat.trim()}`,
-                'X-GitHub-Api-Version': '2022-11-28'
-            },
-            body: JSON.stringify({
-                ref: 'main',
-                inputs: {
-                    party_id: String(party.id),
-                    party_title: party.title,
-                    chars: party.chars || '',
-                    bosses: party.bosses || ''
-                }
-            })
-        });
-
-        if (triggerRes.status === 401 || triggerRes.status === 403) {
-            localStorage.removeItem('maple_github_pat');
-            showToast('GitHub 토큰 권한이 올바르지 않습니다. 다시 입력해주세요.', 'error');
-            openGithubTokenModal();
-            return;
-        }
-
-        if (!triggerRes.ok && triggerRes.status !== 204) {
-            const errText = await triggerRes.text();
-            throw new Error(`GitHub 요청 실패 (${triggerRes.status}): ${errText}`);
-        }
-
-        // 4. 실행 대기 및 감시 (약 60~90초 소요)
-        if (btn) {
-            btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 수집 중...`;
-        }
-
-        const partyChars = party.chars.split(',').map(c => c.trim()).filter(Boolean);
-        const startTime = Date.now();
-        const maxWaitMs = 120000; // 최대 2분 대기
-        let completed = false;
-
-        // 6초 간격으로 Supabase character_specs의 최신 갱신 여부 체크
-        while (Date.now() - startTime < maxWaitMs) {
-            await new Promise(r => setTimeout(r, 6000));
-            
-            // Supabase에서 해당 파티원들의 updated_at 확인
-            const { data, error } = await db
-                .from('character_specs')
-                .select('updated_at')
-                .in('char_name', partyChars)
-                .order('updated_at', { ascending: false })
-                .limit(1);
-
-            if (!error && data && data.length > 0) {
-                const latestUpdate = new Date(data[0].updated_at).getTime();
-                if (latestUpdate >= startTime - 5000) {
-                    completed = true;
-                    break;
+        let numericPartyId = null;
+        if (typeof party.id === 'number') {
+            numericPartyId = party.id;
+        } else if (typeof party.id === 'string') {
+            const digits = party.id.replace(/\D/g, '');
+            if (digits.length > 0) {
+                const parsed = parseInt(digits, 10);
+                if (!isNaN(parsed) && Number.isSafeInteger(parsed)) {
+                    numericPartyId = parsed;
                 }
             }
         }
 
-        // 5. 완료 처리
-        await loadCharacterSpecs();
-        refreshAllViews();
-        setPartyCooldown(party.id);
-        updateRefreshButtonUI(party.id);
+        // 2. 이미 대기열에 동일 파티의 pending/processing 요청이 있는지 확인
+        const { data: existingPending } = await db
+            .from('refresh_queue')
+            .select('id, status, created_at')
+            .eq('party_title', party.title)
+            .in('status', ['pending', 'processing'])
+            .order('created_at', { ascending: false })
+            .limit(1);
 
-        if (completed) {
-            showToast('GitHub Actions에서 최신 배율 반영 완료! 🎉', 'success');
-        } else {
-            showToast('배율 갱신 요청 완료! (DB 반영에 시간이 더 걸릴 수 있습니다)', 'info');
+        let queueId = null;
+        if (existingPending && existingPending.length > 0) {
+            const existingAge = Date.now() - new Date(existingPending[0].created_at).getTime();
+            if (existingAge < 40000) {
+                queueId = existingPending[0].id;
+            }
         }
 
+        // 3. 대기 중인 요청이 없으면 새로 큐에 등록
+        if (!queueId) {
+            const { data: inserted, error: insertError } = await db
+                .from('refresh_queue')
+                .insert([{
+                    party_id: numericPartyId,
+                    party_title: party.title,
+                    chars: party.chars,
+                    bosses: party.bosses,
+                    status: 'pending'
+                }])
+                .select()
+                .single();
+
+            if (insertError) throw insertError;
+            queueId = inserted.id;
+        }
+
+        // 4. 워커가 완료(done/failed)할 때까지 실시간 구독 + 폴링 대기 (최대 25초)
+        await new Promise((resolve, reject) => {
+            let settled = false;
+            const finish = (err, status) => {
+                if (settled) return;
+                settled = true;
+                clearInterval(pollTimer);
+                clearTimeout(timeoutTimer);
+                db.removeChannel(channel);
+                if (err) reject(err);
+                else resolve(status);
+            };
+
+            const channel = db
+                .channel(`queue-watch-${queueId}`)
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'refresh_queue', filter: `id=eq.${queueId}` },
+                    payload => {
+                        const st = payload.new && payload.new.status;
+                        if (st === 'done') finish(null, 'done');
+                        else if (st === 'failed') finish(new Error('배율 추출 중 오류가 발생했습니다.'));
+                    }
+                )
+                .subscribe();
+
+            const pollTimer = setInterval(async () => {
+                const { data: row } = await db
+                    .from('refresh_queue')
+                    .select('*')
+                    .eq('id', queueId)
+                    .single();
+                if (row) {
+                    if (row.status === 'done') finish(null, 'done');
+                    else if (row.status === 'failed') finish(new Error('배율 추출 실패'));
+                }
+            }, 1500);
+
+            const timeoutTimer = setTimeout(() => {
+                finish(null, 'timeout');
+            }, 25000);
+        }).then(async status => {
+            if (status === 'done') {
+                await loadCharacterSpecs();
+                refreshAllViews();
+                setPartyCooldown(party.id);
+                updateRefreshButtonUI(party.id);
+                showToast(`"${party.title}" 파티 최신 배율 갱신 완료! 🎉`, 'success');
+            } else {
+                await db.from('refresh_queue').update({ status: 'failed' }).eq('id', queueId);
+                await loadCharacterSpecs();
+                refreshAllViews();
+                updateRefreshButtonUI(party.id);
+                showToast('로컬 워커(npm run worker)가 꺼져 있어 기존 저장된 배율을 표시합니다.', 'info');
+            }
+        });
     } catch (e) {
-        console.error('GitHub Actions 트리거 오류:', e);
-        showToast('새로고침 요청 중 오류: ' + e.message, 'error');
+        console.error('배율 새로고침 오류:', e);
+        showToast('배율 새로고침 실패: ' + e.message, 'error');
         updateRefreshButtonUI(party.id);
     }
 }
