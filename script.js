@@ -228,7 +228,14 @@ function getClearedBossList(party) {
     if (sourceStr === undefined || sourceStr === null) {
         const fallbackMap = getLocalClearedFallbackMap();
         if (party.id in fallbackMap) {
-            sourceStr = fallbackMap[party.id];
+            const candidate = fallbackMap[party.id] || '';
+            const candidateList = candidate.split(',').map(b => b.trim()).filter(b => allBosses.includes(b));
+            // DB에서 is_cleared가 false로 초기화된 상태인데 로컬 캐시에만 전체 완료로 남아있다면 초기화된 것으로 판단해 비움
+            if (party.is_cleared === false && allBosses.length > 0 && candidateList.length === allBosses.length) {
+                saveLocalClearedFallback(party.id, '');
+                return [];
+            }
+            sourceStr = candidate;
         } else if (party.is_cleared === true) {
             return [...allBosses];
         }
@@ -598,6 +605,51 @@ async function loadCharacterSpecs() {
     }
 }
 
+// 한국 시간(KST) 기준 주간(목요일 00:00) 및 월간(매월 1일 00:00) 로컬 캐시 자동 초기화 동기화
+function syncScheduledResetWithLocalCache(parties) {
+    try {
+        const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+        const kstDay = kstNow.getUTCDay(); // 0: 일 ~ 4: 목 ~ 6: 토
+        const daysSinceThu = (kstDay - 4 + 7) % 7;
+        const latestThu = new Date(Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate() - daysSinceThu));
+        const weeklyResetKey = latestThu.toISOString().slice(0, 10); // 예: "2026-11-05"
+        const monthlyResetKey = `${kstNow.getUTCFullYear()}-${String(kstNow.getUTCMonth() + 1).padStart(2, '0')}`; // 예: "2026-11"
+
+        const prevWeeklyKey = localStorage.getItem('mapleBossLastWeeklyReset_v1');
+        const prevMonthlyKey = localStorage.getItem('mapleBossLastMonthlyReset_v1');
+        const fallbackMap = getLocalClearedFallbackMap();
+        let mapChanged = false;
+
+        if (prevWeeklyKey !== weeklyResetKey) {
+            (parties || []).forEach(p => {
+                const isMonthly = p.bosses && p.bosses.includes('검은마법사');
+                if (!isMonthly && (p.id in fallbackMap)) {
+                    delete fallbackMap[p.id];
+                    mapChanged = true;
+                }
+            });
+            localStorage.setItem('mapleBossLastWeeklyReset_v1', weeklyResetKey);
+        }
+
+        if (prevMonthlyKey !== monthlyResetKey) {
+            (parties || []).forEach(p => {
+                const isMonthly = p.bosses && p.bosses.includes('검은마법사');
+                if (isMonthly && (p.id in fallbackMap)) {
+                    delete fallbackMap[p.id];
+                    mapChanged = true;
+                }
+            });
+            localStorage.setItem('mapleBossLastMonthlyReset_v1', monthlyResetKey);
+        }
+
+        if (mapChanged) {
+            localStorage.setItem(CLEARED_BOSSES_FALLBACK_KEY, JSON.stringify(fallbackMap));
+        }
+    } catch (e) {
+        console.warn('초기화 캐시 동기화 예외:', e);
+    }
+}
+
 // DB에서 데이터 불러오기 (db 객체 사용)
 async function loadParties() {
     const [partiesRes] = await Promise.all([
@@ -610,6 +662,7 @@ async function loadParties() {
         return;
     }
     partiesData = data || [];
+    syncScheduledResetWithLocalCache(partiesData);
     renderKanban();
 }
 

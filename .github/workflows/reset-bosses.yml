@@ -16,12 +16,12 @@ jobs:
         if: github.event.schedule == '0 15 * * 3' || github.event_name == 'workflow_dispatch'
         run: |
           # 검은마법사가 포함되지 않은 주간 보스 파티 전체 초기화 (%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC = 검은마법사)
-          curl -X PATCH "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?bosses=not.like.*%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC*" \
+          curl -f -sS -X PATCH "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?bosses=not.like.*%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC*" \
           -H "apikey: sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
           -H "Authorization: Bearer sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
           -H "Content-Type: application/json" \
           -H "Prefer: return=minimal" \
-          -d '{"is_cleared": false, "cleared_bosses": ""}'
+          -d '{"is_cleared": false}'
 
       - name: Reset Monthly Boss - Black Mage (1st of Every Month KST)
         if: github.event.schedule == '0 15 28-31 * *'
@@ -29,10 +29,10 @@ jobs:
           # 한국 시간(KST) 기준 현재 날짜가 1일인지 확인 (자정 00:00 KST)
           KST_DAY=$(TZ='Asia/Seoul' date +'%d')
           if [ "$KST_DAY" = "01" ]; then
-            curl -X PATCH "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?bosses=like.*%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC*" \
+            curl -f -sS -X PATCH "https://wwtlccjhiearimyuquwh.supabase.co/rest/v1/parties?bosses=like.*%EA%B2%80%EC%9D%80%EB%A7%88%EB%B2%95%EC%82%AC*" \
             -H "apikey: sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
             -H "Authorization: Bearer sb_publishable_cJRd9WgKIcPA1xGGuXO4gA_6geEwGGD" \
             -H "Content-Type: application/json" \
             -H "Prefer: return=minimal" \
-            -d '{"is_cleared": false, "cleared_bosses": ""}'
+            -d '{"is_cleared": false}'
           fi
