@@ -965,9 +965,10 @@ async function refreshPartySpecs() {
             queueId = inserted.id;
         }
 
-        // 4. 워커가 완료(done/failed)할 때까지 실시간 구독 + 폴링 대기 (최대 25초)
+        // 4. 워커가 완료(done/failed)할 때까지 실시간 구독 + 폴링 대기 (수동 캡챠 인증 고려 최대 90초)
         await new Promise((resolve, reject) => {
             let settled = false;
+            const waitStart = Date.now();
             const finish = (err, status) => {
                 if (settled) return;
                 settled = true;
@@ -1000,12 +1001,16 @@ async function refreshPartySpecs() {
                 if (row) {
                     if (row.status === 'done') finish(null, 'done');
                     else if (row.status === 'failed') finish(new Error('배율 추출 실패'));
+                    // 워커가 아예 꺼져 있어서 15초 동안 pending 상태 그대로면 빠르게 타임아웃 처리
+                    else if (row.status === 'pending' && Date.now() - waitStart > 15000) {
+                        finish(null, 'timeout');
+                    }
                 }
             }, 1500);
 
             const timeoutTimer = setTimeout(() => {
                 finish(null, 'timeout');
-            }, 25000);
+            }, 90000);
         }).then(async status => {
             if (status === 'done') {
                 await loadCharacterSpecs();

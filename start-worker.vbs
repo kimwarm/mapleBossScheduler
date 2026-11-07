@@ -2,5 +2,4 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("WScript.Shell")
 sh.CurrentDirectory = fso.GetParentFolderName(WScript.ScriptFullName)
-sh.Run "cmd /c npm run worker >> scripts\worker.log 2>&1", 0, False
-
+sh.Run "cmd /c npm run worker", 0, False
